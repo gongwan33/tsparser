@@ -8,10 +8,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <string.h>
 
 #include <tsparser.h>
+#include <utils.h>
 #include <errnum.h>
 
 #define PROG_INFO_BUFFER_SIZE 1024*4
@@ -23,23 +23,6 @@ unsigned int freq = -1;
 
 FILE* datFp;
 FILE* targetTsFp;
-
-void helpInfo()
-{
-	printf("-s\t Search specific ts for program information\n-a\t Get NIT and search all ts files by frequency info.\n-h\t Help information\n[number] Play specific program (shold search first to make sure which ts to play).\n");
-}
-
-int isNum(char* str)
-{
-	int i = 0;
-	while(str[i])
-	{
-		if(!isdigit(str[i]))
-			return 0;
-		i++;
-	}
-	return 1;
-}
 
 int main(int argc, char** argv)
 {
