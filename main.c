@@ -126,11 +126,20 @@ int main(int argc, char** argv)
 	printf("Freqency is %d\n", freq);
 
 //---------------------Start to parse ts---------------------
+	startParse();
 
+	if(!parseTS(freq))
+	{
+		retval = FREQ_ERR;
+		goto EXIT;
+	}
 
 EXIT:
+	endParse();
+
 	if(progInfoBuffer != NULL)
 		free(progInfoBuffer);
+
 	if(retval != 0)
 		errInfo(retval);
 

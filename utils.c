@@ -42,7 +42,7 @@ void errInfo(int retval)
 			helpInfo();
 			break;
 		case DAT_OPEN_ERR:
-			printf("Can't open profile file! Maybe no permission!\n");
+			printf("Can't open profile file! Maybe no permission or not set frequency first!\n");
 			break;
 		case MALLOC_ERR:
 			printf("Memory error!\n");
