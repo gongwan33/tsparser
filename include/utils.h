@@ -9,6 +9,7 @@
 #define UTILS_H
 
 void helpInfo();
-int isNum(char* str);
+char isNum(char* str);
+void errInfo(int retval);
 
 #endif

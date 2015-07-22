@@ -16,26 +16,33 @@
 
 #define PROG_INFO_BUFFER_SIZE 1024*4
 
-unsigned int programNum = -1;
+int programNum = -1;
 char fileName[200];
 char* progInfoBuffer;
-unsigned int freq = -1;
+int freq = -1;
+int retval = 0;
 
 FILE* datFp;
 FILE* targetTsFp;
 
 int main(int argc, char** argv)
 {
+//-------------------------------Analyse params---------------------------
 	int ch;
 
 	if(argc <= 1)
 	{
-		helpInfo();
-		return NO_PARAM;
+		retval = NO_PARAM;
+		goto EXIT;
 	}
 	else if(argv[1][0] != '-' && isNum(argv[1]))
 	{
 		programNum = atoi(argv[1]);
+	}
+	else if(argv[1][0] != '-' && !isNum(argv[1]))
+	{
+		retval = NO_PARAM;
+		goto EXIT;
 	}
 
 	while((ch = getopt(argc, argv, "s:a:h")) != -1)
@@ -43,9 +50,14 @@ int main(int argc, char** argv)
 		switch(ch)
 		{
 			case 's':
-				printf("option s:'%s'\n", optarg);
 				if(isNum(optarg))
 					freq = atoi(optarg);
+				else
+				{
+					retval = PARAM_ERR;
+					goto EXIT;
+				}
+
 				break;
 			case 'a':
 				break;
@@ -57,11 +69,8 @@ int main(int argc, char** argv)
 		}
 	}	
 
-	if(opterr != 0 && programNum == -1)
-		printf("Please check your command or use -h\n");
 
-	printf("pr num %d\n", programNum);
-
+//----------------------------Init memory----------------------------
     progInfoBuffer = (char *)malloc(PROG_INFO_BUFFER_SIZE);
 	if(progInfoBuffer == NULL)
 	{
@@ -69,14 +78,61 @@ int main(int argc, char** argv)
 		return MALLOC_ERR;
 	}
 
-	if((datFp = fopen("tmp.dat", "wt+")) == NULL)
-		return DAT_OPEN_ERR;
+//---------------------------Get dat from profile file----------------
 
-	sprintf(progInfoBuffer, "program num %d\n", programNum);	
-	fwrite(progInfoBuffer, strlen(progInfoBuffer),1, datFp);
+	int tmpDatLen = 0;
+
+	sprintf(progInfoBuffer, "[freq] %d\n", freq);	
+	tmpDatLen = strlen(progInfoBuffer);
+
+	if(freq > 0)
+	{
+		if((datFp = fopen("tmp.dat", "w+")) == NULL)
+		{
+			retval = DAT_OPEN_ERR;
+			goto EXIT;
+		}
+
+		fwrite(progInfoBuffer, tmpDatLen,1, datFp);
+	}
+	else
+	{
+		if((datFp = fopen("tmp.dat", "r")) == NULL)
+		{
+			retval = DAT_OPEN_ERR;
+			goto EXIT;
+		}
+
+		char* freqFromFile;
+		int tmpFreq = 0;
+		freqFromFile = (char*)malloc(tmpDatLen + 1);
+		fread(freqFromFile, tmpDatLen, 1, datFp);
+
+		if(sscanf(freqFromFile, "[freq] %d\n", &tmpFreq) > 0)
+			freq = tmpFreq;
+
+		free(freqFromFile);
+	}
 
 	if(datFp != NULL)
 		fclose(datFp);
-	free(progInfoBuffer);
-	return 0;	
+
+	if(freq == -1)
+	{
+		retval = FREQ_ERR;
+		goto EXIT;
+	}
+
+	printf("Freqency is %d\n", freq);
+
+//---------------------Start to parse ts---------------------
+
+
+EXIT:
+	if(progInfoBuffer != NULL)
+		free(progInfoBuffer);
+	if(retval != 0)
+		errInfo(retval);
+
+	return retval;	
 }
