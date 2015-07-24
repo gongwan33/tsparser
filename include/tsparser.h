@@ -140,7 +140,7 @@ struct PAT
 	unsigned char current_next_indicator:		1;
 	unsigned char section_number:				8;
 	unsigned char last_section_number:			8;
-	struct programInfo programInfoElm;
+	struct programInfo* programInfoElm;
 	unsigned int CRC_32;
 } PATElm;
 
