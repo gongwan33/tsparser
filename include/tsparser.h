@@ -14,7 +14,7 @@
 #define FILE_BUFFER_SIZE 100*1024
 #define PACK_BUFFER_SIZE 4*1024
 
-char isFreqAvailable(int freq);
+char isNameAvailable(int name);
 char startParse();
 char endParse();
 int openTSFile(int freq);
@@ -143,6 +143,22 @@ struct PAT
 	struct programInfo* programInfoElm;
 	unsigned int CRC_32;
 } PATElm;
+
+struct PMT
+{
+	unsigned char table_id:						8;
+	unsigned char section_syntax_indicator:		1;
+	unsigned int section_length:				12;
+	unsigned int program_number:				16;
+	unsigned char version_number:				5;
+	unsigned char current_next_indicator:		1;
+	unsigned char section_number:				8;
+	unsigned char last_section_number:			8;
+	unsigned int PCR_PID:						13;
+	unsigned int program_info_length:			12;
+	
+	unsigned int CRC_32;
+} PMTElm;
 
 struct pointerField
 {

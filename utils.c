@@ -15,7 +15,7 @@
 
 void helpInfo()
 {
-	printf("-s[frequency]\t Search specific ts for program information\n-a[frequency]\t Get NIT and search all ts files by frequency info.\n-h\t Help information\n[number] Play specific program (shold search first to make sure which ts to play).\n");
+	printf("-s[name]\t Search specific ts for program information\n-a[name]\t Get NIT and search all ts files by frequency info.\n-h\t Help information\n[number] Play specific program (shold search first to make sure which ts to play).\n");
 }
 
 char isNum(char* str)
@@ -42,13 +42,13 @@ void errInfo(int retval)
 			helpInfo();
 			break;
 		case DAT_OPEN_ERR:
-			printf("Can't open profile file! Maybe no permission or not set frequency first!\n");
+			printf("Can't open profile file! Maybe no permission or not set name first!\n");
 			break;
 		case MALLOC_ERR:
 			printf("Memory error!\n");
 			break;
-		case FREQ_ERR:
-			printf("Frequency not right! Please check!\n");
+		case NAME_ERR:
+			printf("Name not right! Please check!\n");
 			break;
 		default:
 			printf("Unknown error!\n");

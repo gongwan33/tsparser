@@ -12,7 +12,7 @@
 #define PARAM_ERR		-2
 #define DAT_OPEN_ERR	-3
 #define MALLOC_ERR		-4
-#define FREQ_ERR		-5
+#define NAME_ERR		-5
 
 
 #endif

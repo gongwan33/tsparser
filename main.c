@@ -19,7 +19,7 @@
 int programNum = -1;
 char fileName[200];
 char* progInfoBuffer;
-int freq = -1;
+int name = -1;
 int retval = 0;
 
 FILE* datFp;
@@ -51,7 +51,7 @@ int main(int argc, char** argv)
 		{
 			case 's':
 				if(isNum(optarg))
-					freq = atoi(optarg);
+					name = atoi(optarg);
 				else
 				{
 					retval = PARAM_ERR;
@@ -82,10 +82,10 @@ int main(int argc, char** argv)
 
 	int tmpDatLen = 0;
 
-	sprintf(progInfoBuffer, "[freq] %d\n", freq);	
+	sprintf(progInfoBuffer, "[name] %d\n", name);	
 	tmpDatLen = strlen(progInfoBuffer);
 
-	if(freq > 0)
+	if(name > 0)
 	{
 		if((datFp = fopen("tmp.dat", "w+")) == NULL)
 		{
@@ -103,34 +103,34 @@ int main(int argc, char** argv)
 			goto EXIT;
 		}
 
-		char* freqFromFile;
-		int tmpFreq = 0;
-		freqFromFile = (char*)malloc(tmpDatLen + 1);
-		fread(freqFromFile, tmpDatLen, 1, datFp);
+		char* nameFromFile;
+		int tmpName = 0;
+		nameFromFile = (char*)malloc(tmpDatLen + 1);
+		fread(nameFromFile, tmpDatLen, 1, datFp);
 
-		if(sscanf(freqFromFile, "[freq] %d\n", &tmpFreq) > 0)
-			freq = tmpFreq;
+		if(sscanf(nameFromFile, "[name] %d\n", &tmpName) > 0)
+			name = tmpName;
 
-		free(freqFromFile);
+		free(nameFromFile);
 	}
 
 	if(datFp != NULL)
 		fclose(datFp);
 
-	if(freq == -1)
+	if(name == -1)
 	{
-		retval = FREQ_ERR;
+		retval = NAME_ERR;
 		goto EXIT;
 	}
 
-	printf("Freqency is %d\n", freq);
+	printf("Name is %d\n", name);
 
 //---------------------Start to parse ts---------------------
 	startParse();
 
-	if(!parseTS(freq))
+	if(!parseTS(name))
 	{
-		retval = FREQ_ERR;
+		retval = NAME_ERR;
 		goto EXIT;
 	}
 

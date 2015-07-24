@@ -24,11 +24,13 @@ int packBufferLen;
 char PATOkFlag = -1;
 char PMTOkFlag = -1;
 int programCount = 0;
+unsigned int lastPATVersion = 0;
+unsigned int lastPMTVersion = 0;
 
-char isFreqAvailable(int freq)
+char isNameAvailable(int name)
 {
 	char fileName[200];
-	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", freq);
+	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", name);
 	tsFp = fopen(fileName, "rb");
 	if(tsFp != NULL)
 	{
@@ -59,10 +61,10 @@ char endParse()
 		free(PATElm.programInfoElm);
 }
 
-int openTSFile(int freq)
+int openTSFile(int name)
 {
 	char fileName[200];
-	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", freq);
+	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", name);
 	tsFp = fopen(fileName, "rb");
 	if(tsFp != NULL)
 	{
@@ -130,12 +132,30 @@ static void printStructInfo(int flag)
 	}
 }
 
+static int isPMTPID(unsigned int PID)
+{
+	int i = 0;
+
+	if(PATElm.programInfoElm == NULL)
+		return FALSE;
+
+	for(i = 0; i < programCount; i++)
+	{
+		if(PID == PATElm.programInfoElm[i].network_program_PID && PATElm.programInfoElm[i].program_number != 0)
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 {
 	int i = 0;
 
 	if(bufferLen <= offset + 7)
 		return FALSE;
+
+	lastPATVersion = PATElm.version_number;
 
 	PATElm.table_id = buffer[offset];
 	PATElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
@@ -145,6 +165,12 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 	PATElm.current_next_indicator = (buffer[offset + 5] & 0x01);
 	PATElm.section_number = buffer[offset + 6];
 	PATElm.last_section_number = buffer[offset + 7];
+
+	if(PATOkFlag == -1)
+		PATOkFlag = 1;
+
+	if(lastPATVersion < PATElm.version_number)
+		PMTOkFlag = -1;
 
 	programCount = (PATElm.section_length - 9) / 4;
 	
@@ -157,6 +183,42 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 	}
 
 	offset = offset + PATElm.section_length + 12 + 1;
+
+	return TRUE;
+}
+
+static int parsePMT(unsigned char* buffer, int bufferLen, int offset)
+{
+	int i = 0;
+
+	if(bufferLen <= offset + 7)
+		return FALSE;
+
+	lastPMTVersion = PMTElm.version_number;
+
+	PMTElm.table_id = buffer[offset];
+	PMTElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
+	PMTElm.section_length = ((buffer[offset + 1] & 0x0f) << 8) | (buffer[offset + 2] & 0xff);
+	PMTElm.program_number = (buffer[offset + 3] << 8) | buffer[offset + 4];
+	PMTElm.version_number = (buffer[offset + 5] & 0x3e) >> 1;
+	PMTElm.current_next_indicator = (buffer[offset + 5] & 0x01);
+	PMTElm.section_number = buffer[offset + 6];
+	PMTElm.last_section_number = buffer[offset + 7];
+
+	if(PMTOkFlag == -1)
+		PMTOkFlag = 1;
+
+//	programCount = (PMTElm.section_length - 9) / 4;
+	
+//	PMTElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
+
+//	for(i = 0; i < programCount; i++)
+//	{
+//		PATElm.programInfoElm[i].program_number = (buffer[offset + i*4 + 8] << 8) | buffer[offset + i*4 + 9];
+//		PATElm.programInfoElm[i].network_program_PID = ((buffer[offset + i*4 + 10] & 0x01) << 8) | buffer[offset + i*4 + 11];
+//	}
+
+//	offset = offset + PATElm.section_length + 12 + 1;
 
 	return TRUE;
 }
@@ -177,9 +239,15 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 	header.adaptation_field_control = (buffer[3] & 0x30) >> 4;
 	header.continuity_counter = buffer[3] & 0x0f;
 
-
 	if(header.PID != 0x0000 && PATOkFlag == -1)
+	{
 		return TRUE;
+	}
+
+	if(!isPMTPID(header.PID) && PMTOkFlag == -1 && PATOkFlag == 1)
+	{
+		return TRUE;
+	}
 
 	if(header.adaptation_field_control == 0x2 || header.adaptation_field_control == 0x3)
 	{
@@ -208,6 +276,12 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 			case 0x0000:
 			parsePAT(buffer, bufferLen, offset);	
 			break;
+
+			default:
+				if(isPMTPID(header.PID))
+				{
+//					parsePMT(buffer, bufferLen, offset);
+				}
 
 		}
 	}	
@@ -257,11 +331,11 @@ break;
 	return TRUE;
 }
 
-char parseTS(int freq)
+char parseTS(int name)
 {
 	int readLen = 0;
 
-	if(openTSFile(freq) != TRUE)
+	if(openTSFile(name) != TRUE)
 		return FALSE;
 
 	while(1)
