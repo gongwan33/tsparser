@@ -13,8 +13,10 @@
 
 #define FILE_BUFFER_SIZE 100*1024
 #define PACK_BUFFER_SIZE 4*1024
+#define MAX_PROGRAM_NUMBER 600
+#define MAX_PER_PMT_NUMBER 10
 
-char isNameAvailable(int name);
+char isFreqAvailable(int freq);
 char startParse();
 char endParse();
 int openTSFile(int freq);
@@ -164,6 +166,20 @@ struct pointerField
 {
 	unsigned char pointer_field;
 } pointerFieldElm;
+
+struct mapPES
+{
+	unsigned char stream_type;
+	unsigned int elementary_PID:		13;
+	unsigned int ES_info_length:		12;
+};
+
+struct MAP
+{
+	int PMT_PID;
+	struct mapPES* mapPESElm[MAX_PER_PMT_NUMBER];
+	unsigned int mapNumber;
+} mapElm[MAX_PROGRAM_NUMBER];
 
 #endif
 

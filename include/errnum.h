@@ -8,11 +8,12 @@
 #ifndef ERRNUM_H
 #define ERRNUM_H
 
-#define NO_PARAM		-1
-#define PARAM_ERR		-2
-#define DAT_OPEN_ERR	-3
-#define MALLOC_ERR		-4
-#define NAME_ERR		-5
+#define NO_PARAM				-1
+#define PARAM_ERR				-2
+#define DAT_OPEN_ERR			-3
+#define MALLOC_ERR				-4
+#define FREQ_ERR				-5
+#define PROGRAM_LIST_FULL_ERR	-6
 
 
 #endif

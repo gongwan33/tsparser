@@ -11,6 +11,7 @@
 
 #include <tsparser.h>
 #include <utils.h>
+#include <errnum.h>
 
 #define PRINT_DEBUG
 
@@ -23,15 +24,19 @@ int packBufferP;
 int packBufferLen;
 char PATOkFlag = -1;
 char PMTOkFlag = -1;
+
 int programCount = 0;
+int programPointer = 0;
+
+int mapSectionLen = 0;
 unsigned int lastPATVersion = 0;
 unsigned int lastPMTVersion = 0;
 
-char isNameAvailable(int name)
+char isFreqAvailable(int freq)
 {
-	char fileName[200];
-	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", name);
-	tsFp = fopen(fileName, "rb");
+	char fileFreq[200];
+	sprintf(fileFreq, "../analyseTS_data/ocn_%d.ts", freq);
+	tsFp = fopen(fileFreq, "rb");
 	if(tsFp != NULL)
 	{
 		fclose(tsFp);
@@ -41,11 +46,88 @@ char isNameAvailable(int name)
 		return FALSE;
 }	
 
+static void initProgramList()
+{
+	int i = 0, j = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		mapElm[i].PMT_PID = -1;
+		for(j = 0; j < MAX_PER_PMT_NUMBER; j++)
+		{	
+			mapElm[i].mapPESElm[j] = NULL;
+		}
+		mapElm[i].mapNumber = 0;
+	}
+}
+
+static int findInProgramList(unsigned int PID)
+{
+	int i = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(mapElm[i].PMT_PID == PID)
+			return i;
+	}
+
+	return -1;
+}
+
+static int getProgramListPointer()
+{
+	int i = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(mapElm[i].PMT_PID == -1)
+			return i;
+	}
+
+	return -1;
+}
+
+static char delProgramListPointer(int pointer)
+{
+	int i = 0;
+	if(pointer < MAX_PROGRAM_NUMBER && pointer >= 0 && mapElm[pointer].PMT_PID != -1)
+	{
+		for(i = 0; i < mapElm[pointer].mapNumber; i++)
+		{
+			if(mapElm[pointer].mapPESElm[i] != NULL)
+				free(mapElm[pointer].mapPESElm[i]);
+		}
+	}
+
+	return TRUE;
+}
+
+static void releaseProgramList()
+{
+	int i = 0, j = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(mapElm[i].PMT_PID != -1)
+		{
+			for(j = 0; j < mapElm[i].mapNumber; j++)
+			{	
+				if(mapElm[i].mapPESElm[j] != NULL)
+					free(mapElm[i].mapPESElm[j]);
+			}
+			mapElm[i].PMT_PID = 0;
+			mapElm[i].mapNumber = 0;
+		}
+		
+	}
+}
+
 char startParse()
 {
 	fileBuffer = (unsigned char*)malloc(FILE_BUFFER_SIZE);	
 	packBuffer = (unsigned char*)malloc(PACK_BUFFER_SIZE);
 
+	initProgramList();
 	memset(&header, 0, sizeof(header));
 }
 
@@ -59,13 +141,15 @@ char endParse()
 
 	if(PATElm.programInfoElm != NULL)
 		free(PATElm.programInfoElm);
+
+	releaseProgramList();
 }
 
-int openTSFile(int name)
+int openTSFile(int freq)
 {
-	char fileName[200];
-	sprintf(fileName, "../analyseTS_data/ocn_%d.ts", name);
-	tsFp = fopen(fileName, "rb");
+	char fileFreq[200];
+	sprintf(fileFreq, "../analyseTS_data/ocn_%d.ts", freq);
+	tsFp = fopen(fileFreq, "rb");
 	if(tsFp != NULL)
 	{
 		return TRUE;
@@ -127,6 +211,45 @@ static void printStructInfo(int flag)
 				printf("---------------------------------------------\n");
 			break;
 
+		case 2:
+			printf("---------------------------------------------\n");
+			printf("PMT Info:\n");
+			printf("table_id:\t 0x%x\n", PMTElm.table_id);
+			printf("section_syntax_indicator:\t 0x%x\n", PMTElm.section_syntax_indicator);
+			printf("section_length:\t 0x%x\n", PMTElm.section_length);
+			printf("program_nubmer:\t 0x%x\n", PMTElm.program_number);
+			printf("version_number:\t 0x%x\n", PMTElm.version_number);
+			printf("current_next_indicator:\t 0x%x\n", PMTElm.current_next_indicator);
+			printf("section_number:\t 0x%x\n", PMTElm.section_number);
+			printf("last_section_number:\t 0x%x\n", PMTElm.last_section_number);
+			printf("PCR_PID:\t 0x%x\n", PMTElm.PCR_PID);
+			printf("program_info_length:\t 0x%x\n", PMTElm.program_info_length);
+			printf("---------------------------------------------\n");
+			break;
+
+		case 3:
+			printf("---------------------------------------------\n");
+			printf("Program Info:\n");
+			for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+			{
+				if(mapElm[i].PMT_PID == -1)
+					continue;
+
+				int j = 0;
+
+				printf("PMT_PID:\t 0x%x\n", mapElm[i].PMT_PID);
+			printf("---------------------------------------------\n");
+				for(j = 0; j < mapElm[i].mapNumber; j++)
+				{
+					printf("stream_type:\t 0x%x\n", mapElm[i].mapPESElm[j] -> stream_type);
+					printf("elementary_PID:\t 0x%x\n", mapElm[i].mapPESElm[j] -> elementary_PID);
+					printf("ES_info_length:\t 0x%x\n", mapElm[i].mapPESElm[j] -> ES_info_length);
+
+				}
+			printf("---------------------------------------------\n");
+			}
+			break;
+
 		default:
 			printf("In printStructInfo: unknow flag!\n");
 	}
@@ -159,7 +282,15 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 
 	PATElm.table_id = buffer[offset];
 	PATElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
+
+	if(PATElm.section_syntax_indicator != 1)
+		return FALSE;
+
 	PATElm.section_length = ((buffer[offset + 1] & 0x0f) << 8) | (buffer[offset + 2] & 0xff);
+
+	if(PATElm.section_length > 1021 || (PATElm.section_length & 0xc000) != 0 || PATElm.section_length + 3 > bufferLen)
+		return FALSE;
+
 	PATElm.transport_stream_id = (buffer[offset + 3] << 8) | buffer[offset + 4];
 	PATElm.version_number = (buffer[offset + 5] & 0x3e) >> 1;
 	PATElm.current_next_indicator = (buffer[offset + 5] & 0x01);
@@ -169,12 +300,15 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 	if(PATOkFlag == -1)
 		PATOkFlag = 1;
 
-	if(lastPATVersion < PATElm.version_number)
-		PMTOkFlag = -1;
+	if(lastPATVersion >= PATElm.version_number)
+	{
+		return TRUE;
+	}
 
 	programCount = (PATElm.section_length - 9) / 4;
 	
-	PATElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
+	if(PATElm.programInfoElm == NULL)
+		PATElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
 
 	for(i = 0; i < programCount; i++)
 	{
@@ -182,14 +316,17 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 		PATElm.programInfoElm[i].network_program_PID = ((buffer[offset + i*4 + 10] & 0x01) << 8) | buffer[offset + i*4 + 11];
 	}
 
-	offset = offset + PATElm.section_length + 12 + 1;
+//	printStructInfo(1);
+	offset = offset + PATElm.section_length + 3 + 1;
 
 	return TRUE;
 }
 
-static int parsePMT(unsigned char* buffer, int bufferLen, int offset)
+static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int offset)
 {
-	int i = 0;
+	int i = 0, j = 0;
+	int jump = 0;
+	unsigned int skipLen = 0;
 
 	if(bufferLen <= offset + 7)
 		return FALSE;
@@ -198,30 +335,67 @@ static int parsePMT(unsigned char* buffer, int bufferLen, int offset)
 
 	PMTElm.table_id = buffer[offset];
 	PMTElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
+
+	if(PMTElm.section_syntax_indicator != 1)
+		return FALSE;
+
 	PMTElm.section_length = ((buffer[offset + 1] & 0x0f) << 8) | (buffer[offset + 2] & 0xff);
+
+	if(PMTElm.section_length <= 1021 && (PMTElm.section_length & 0xc000) != 0)
+		return FALSE;
+
 	PMTElm.program_number = (buffer[offset + 3] << 8) | buffer[offset + 4];
 	PMTElm.version_number = (buffer[offset + 5] & 0x3e) >> 1;
 	PMTElm.current_next_indicator = (buffer[offset + 5] & 0x01);
 	PMTElm.section_number = buffer[offset + 6];
 	PMTElm.last_section_number = buffer[offset + 7];
+	PMTElm.PCR_PID = ((buffer[offset + 8] & 0x1f) << 8) | buffer[offset + 9];
+	PMTElm.program_info_length = ((buffer[offset + 10] & 0xf) << 8) | buffer[offset + 11];
 
 	if(PMTOkFlag == -1)
 		PMTOkFlag = 1;
 
-//	programCount = (PMTElm.section_length - 9) / 4;
-	
-//	PMTElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
+	mapSectionLen = PMTElm.section_length - 13 - PMTElm.program_info_length;
 
-//	for(i = 0; i < programCount; i++)
-//	{
-//		PATElm.programInfoElm[i].program_number = (buffer[offset + i*4 + 8] << 8) | buffer[offset + i*4 + 9];
-//		PATElm.programInfoElm[i].network_program_PID = ((buffer[offset + i*4 + 10] & 0x01) << 8) | buffer[offset + i*4 + 11];
-//	}
+	if((programPointer = findInProgramList(PID)) == -1)
+		programPointer = getProgramListPointer();
+	else
+	{
+		delProgramListPointer(programPointer);
+	}
 
-//	offset = offset + PATElm.section_length + 12 + 1;
+	if(programPointer == -1)
+		return PROGRAM_LIST_FULL_ERR;
 
+	mapElm[programPointer].PMT_PID = PID;
+
+	jump = offset + 12 + PMTElm.program_info_length;
+
+	for(i = 0; i < mapSectionLen; i = i + skipLen)
+	{
+		mapElm[programPointer].mapPESElm[j] = (struct mapPES*) malloc(sizeof(struct mapPES));
+		mapElm[programPointer].mapPESElm[j] -> stream_type = buffer[jump + i];
+		mapElm[programPointer].mapPESElm[j] -> elementary_PID = ((buffer[jump + i + 1] & 0x1f) << 8) | buffer[jump + i + 2];
+		mapElm[programPointer].mapPESElm[j] -> ES_info_length = ((buffer[jump + i + 3] & 0xf) << 8) | buffer[jump + i + 4];
+		skipLen = 5 + mapElm[programPointer].mapPESElm[j] -> ES_info_length;  
+
+		mapElm[programPointer].mapNumber = j + 1;
+
+		j++;
+
+		if(j > MAX_PER_PMT_NUMBER)
+			break;
+	}
+
+	offset = offset + PMTElm.section_length + 3 + 1;
+
+	printStructInfo(3);
 	return TRUE;
 }
+
+//-------------------------------T
+int testi = 0;
+//--------------------------------
 
 static int analysePacket(unsigned char* buffer, int bufferLen)
 {
@@ -232,6 +406,10 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 
 	header.sync_byte = buffer[0];
 	header.transport_error_indicator = (buffer[1] & 0x80) >> 7;
+
+	if(header.transport_error_indicator == 1)
+		return FALSE;
+
 	header.payload_unit_start_indicator = (buffer[1] & 0x40) >> 6;
 	header.transport_priority = (buffer[1] & 0x20) >> 5;
 	header.PID = ((buffer[1] & 0x1f) << 8) | buffer[2];
@@ -244,10 +422,11 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 		return TRUE;
 	}
 
-	if(!isPMTPID(header.PID) && PMTOkFlag == -1 && PATOkFlag == 1)
+/*	if(!isPMTPID(header.PID) && PMTOkFlag == -1 && PATOkFlag == 1)
 	{
 		return TRUE;
 	}
+*/
 
 	if(header.adaptation_field_control == 0x2 || header.adaptation_field_control == 0x3)
 	{
@@ -280,7 +459,7 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 			default:
 				if(isPMTPID(header.PID))
 				{
-//					parsePMT(buffer, bufferLen, offset);
+					parsePMT(header.PID, buffer, bufferLen, offset);
 				}
 
 		}
@@ -288,9 +467,7 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 
 	return TRUE;
 }
-//-------------------------------T
-int i = 0;
-//--------------------------------
+
 static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
 {
 	int p = 0;
@@ -308,34 +485,33 @@ static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
 				memcpy(packBuffer, buffer + baseP, p);
 				analysePacket(packBuffer, p);
 #ifdef PRINT_DEBUG
-			printStructInfo(1);
+//			printStructInfo(0);
 #endif
 			}
 			else
 				printf("Special pack size!\n");
 
-
 			baseP = p + baseP;
-			p = 0;
+			p = 188;
 //------------------------------------------------------------T
-i++;
-if(i > 1000)
-break;
+//testi++;
+//if(testi > 1000)
+//break;
 //-------------------------------------------------------------
 		}
-		
-		p++;
+		else	
+			p++;
 	}
 
 	*bufferP = baseP;	
 	return TRUE;
 }
 
-char parseTS(int name)
+char parseTS(int freq)
 {
 	int readLen = 0;
 
-	if(openTSFile(name) != TRUE)
+	if(openTSFile(freq) != TRUE)
 		return FALSE;
 
 	while(1)
