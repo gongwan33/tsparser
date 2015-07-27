@@ -32,6 +32,8 @@ int mapSectionLen = 0;
 unsigned int lastPATVersion = 0;
 unsigned int lastPMTVersion = 0;
 
+extern int programWantToPlay;
+
 char isFreqAvailable(int freq)
 {
 	char fileFreq[200];
@@ -90,6 +92,7 @@ static int getProgramListPointer()
 static char delProgramListPointer(int pointer)
 {
 	int i = 0;
+
 	if(pointer < MAX_PROGRAM_NUMBER && pointer >= 0 && mapElm[pointer].PMT_PID != -1)
 	{
 		for(i = 0; i < mapElm[pointer].mapNumber; i++)
@@ -97,6 +100,8 @@ static char delProgramListPointer(int pointer)
 			if(mapElm[pointer].mapPESElm[i] != NULL)
 				free(mapElm[pointer].mapPESElm[i]);
 		}
+		mapElm[pointer].PMT_PID = -1;
+		mapElm[pointer].mapNumber = 0;
 	}
 
 	return TRUE;
@@ -250,6 +255,13 @@ static void printStructInfo(int flag)
 			}
 			break;
 
+		case 4:
+			printf("---------------------------------------------\n");
+			printf("PES Info:\n");
+			printf("stream_id:\t 0x%x\n", PESElm.stream_id);
+			printf("---------------------------------------------\n");
+			break;
+
 		default:
 			printf("In printStructInfo: unknow flag!\n");
 	}
@@ -268,6 +280,34 @@ static int isPMTPID(unsigned int PID)
 			return TRUE;
 	}
 
+	return FALSE;
+}
+
+static int isPESPID(unsigned int PID)
+{
+	int i = 0, j = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(mapElm[i].PMT_PID != -1)
+		{
+			for(j = 0; j < mapElm[i].mapNumber; j++)
+			{	
+				if(mapElm[i].mapPESElm[j] != NULL && mapElm[i].mapPESElm[j] -> elementary_PID == PID)
+				{
+					if(mapElm[i].mapPESElm[j] -> stream_type == 0x02)
+					{
+						return VIDEO_FLAG;
+					}
+					else if(mapElm[i].mapPESElm[j] -> stream_type == 0x04)
+					{
+						return AUDIO_FLAG;
+					}
+				}
+			}
+		}
+		
+	}
 	return FALSE;
 }
 
@@ -389,17 +429,29 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int 
 
 	offset = offset + PMTElm.section_length + 3 + 1;
 
-	printStructInfo(3);
+//	printStructInfo(3);
 	return TRUE;
 }
 
-//-------------------------------T
-int testi = 0;
-//--------------------------------
+static int parsePES(unsigned char* buffer, int bufferLen, int offset, int flag)
+{
+	if(bufferLen <= offset + 7)
+		return FALSE;
+
+	PESElm.stream_id = buffer[3];	
+		
+
+
+//	offset = offset + PMTElm.section_length + 3 + 1;
+
+	printStructInfo(4);
+	return TRUE;
+}
 
 static int analysePacket(unsigned char* buffer, int bufferLen)
 {
 	int offset = 4;
+	char audioVideoFlag = 0;
 
 	if(bufferLen <= offset)
 		return FALSE;
@@ -462,6 +514,11 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 					parsePMT(header.PID, buffer, bufferLen, offset);
 				}
 
+				audioVideoFlag = isPESPID(header.PID);
+				if(audioVideoFlag)
+				{
+					parsePES(buffer, bufferLen, offset, audioVideoFlag);
+				}
 		}
 	}	
 
@@ -493,11 +550,6 @@ static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
 
 			baseP = p + baseP;
 			p = 188;
-//------------------------------------------------------------T
-//testi++;
-//if(testi > 1000)
-//break;
-//-------------------------------------------------------------
 		}
 		else	
 			p++;

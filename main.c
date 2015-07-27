@@ -21,6 +21,7 @@ char fileFreq[200];
 char* progInfoBuffer;
 int freq = -1;
 int retval = 0;
+int programWantToPlay = -1;
 
 FILE* datFp;
 FILE* targetTsFp;
@@ -121,6 +122,12 @@ int main(int argc, char** argv)
 	{
 		retval = FREQ_ERR;
 		goto EXIT;
+	}
+
+	if(programNum != -1)
+	{
+		programWantToPlay = programNum;
+		printf("Program Num: %d\n", programWantToPlay);
 	}
 
 	printf("Freq is %d\n", freq);

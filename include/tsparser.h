@@ -8,8 +8,11 @@
 #ifndef TSPARSER_H
 #define TSPARSER_H
 
-#define TRUE 1
-#define FALSE 0
+#define TRUE	1
+#define FALSE	0
+
+#define AUDIO_FLAG	2
+#define VIDEO_FLAG	3
 
 #define FILE_BUFFER_SIZE 100*1024
 #define PACK_BUFFER_SIZE 4*1024
@@ -123,7 +126,7 @@ struct PES
 	unsigned int DTS;
 	unsigned int ESCR_base;
 	unsigned int ES_rate;
-} PESheader;
+} PESElm;
 
 struct programInfo
 {
