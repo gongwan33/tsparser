@@ -15,7 +15,9 @@
 
 #define PRINT_DEBUG
 
-FILE* tsFp;
+static FILE* tsFp;
+static FILE* outPutFp;
+
 unsigned char* fileBuffer;
 int fileBufferP;
 int fileBufferLen;
@@ -134,10 +136,21 @@ char startParse()
 
 	initProgramList();
 	memset(&header, 0, sizeof(header));
+
+	if((outPutFp = fopen("./outPutProgram.ts", "wr+")) == NULL)
+	{
+		printf("Output file stream open error!\n");
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 char endParse()
 {
+	if(outPutFp != NULL)
+		fclose(outPutFp);
+
 	if(fileBuffer != NULL)
 		free(fileBuffer);			
 
@@ -283,7 +296,7 @@ static int isPMTPID(unsigned int PID)
 	return FALSE;
 }
 
-static int isPESPID(unsigned int PID)
+static int isPESPID(unsigned int PID, int* proNum)
 {
 	int i = 0, j = 0;
 
@@ -295,6 +308,7 @@ static int isPESPID(unsigned int PID)
 			{	
 				if(mapElm[i].mapPESElm[j] != NULL && mapElm[i].mapPESElm[j] -> elementary_PID == PID)
 				{
+					*proNum = mapElm[i].program_number;
 					if(mapElm[i].mapPESElm[j] -> stream_type == 0x02)
 					{
 						return VIDEO_FLAG;
@@ -408,6 +422,7 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int 
 		return PROGRAM_LIST_FULL_ERR;
 
 	mapElm[programPointer].PMT_PID = PID;
+	mapElm[programPointer].program_number = PMTElm.program_number;
 
 	jump = offset + 12 + PMTElm.program_info_length;
 
@@ -438,9 +453,127 @@ static int parsePES(unsigned char* buffer, int bufferLen, int offset, int flag)
 	if(bufferLen <= offset + 7)
 		return FALSE;
 
-	PESElm.stream_id = buffer[3];	
-		
+	PESElm.stream_id = buffer[offset + 3];
+	PESElm.PES_packet_length = (buffer[offset + 4] <<  8)| buffer[offset + 5];
+	offset += 6;
 
+	if(PESElm.stream_id != program_stream_map && PESElm.stream_id != padding_stream \
+		&& PESElm.stream_id != private_stream_2 && PESElm.stream_id != ECM \
+		&& PESElm.stream_id != EMM && PESElm.stream_id != program_stream_directory \
+		&& PESElm.stream_id != DSMCC_stream && PESElm.stream_id != ITU_T_Rec_H_222_1_type_E_stream)
+	{
+		PESElm.PES_scrambling_control = (buffer[offset] & 0x30) >> 4;
+		PESElm.PES_priority = (buffer[offset] & 0x8) >> 3;
+		PESElm.data_alignment_indicator = (buffer[offset] & 0x4) >> 2;
+		PESElm.copyright = (buffer[offset] & 0x2) >> 1;
+		PESElm.original_or_copy = (buffer[offset] & 0x1);
+		PESElm.PTS_DTS_flags = (buffer[offset + 1] & 0xc0) >> 6;
+		PESElm.ESCR_flag = (buffer[offset + 1] & 0x20) >> 5;
+		PESElm.ES_rate_flag = (buffer[offset + 1] & 0x10) >> 4;
+		PESElm.DSM_trick_mode_flag = (buffer[offset + 1] & 0x8) >> 3;
+		PESElm.additional_copy_info_flag = (buffer[offset + 1] & 0x4) >> 2;
+		PESElm.PES_CRC_flag = (buffer[offset + 1] & 0x2) >> 1;
+		PESElm.PES_extension_flag = buffer[offset + 1] & 0x1;
+		PESElm.PES_header_data_length = buffer[offset + 2];
+		
+		offset += 3;
+
+		if(PESElm.PTS_DTS_flags == 0x2)
+		{
+			offset += 5;
+		}
+
+		if(PESElm.PTS_DTS_flags == 0x3)
+		{
+			offset += 10;
+		}
+
+		if(PESElm.ESCR_flag == 0x1)
+		{
+			offset += 6;
+		}
+
+		if(PESElm.ES_rate_flag == 0x1)
+		{
+			offset += 3;
+		}
+
+		if(PESElm.DSM_trick_mode_flag == 0x1)
+		{
+			PESElm.trick_mode_control = (buffer[offset] & 0xe0) >> 5;
+			if(PESElm.trick_mode_control == fast_forward)
+			{
+			}
+			else if(PESElm.trick_mode_control == slow_motion)
+			{
+			}
+			else if(PESElm.trick_mode_control == freeze_frame)
+			{
+			}
+			else if(PESElm.trick_mode_control == fast_reverse)
+			{
+			}
+			else if(PESElm.trick_mode_control == slow_reverse)
+			{
+			}
+			else
+			{
+			}
+
+			offset += 1;
+		}
+
+		if(PESElm.additional_copy_info_flag == 0x1)
+		{
+			offset += 1;
+		}
+
+		if(PESElm.PES_CRC_flag == 0x1)
+		{
+			offset += 1;
+		}
+
+		if(PESElm.PES_extension_flag == 0x1)
+		{
+			PESElm.PES_private_data_flag = (buffer[offset] & 0x80) >> 7;
+			PESElm.pack_header_field_flag = (buffer[offset] & 0x40) >> 6;
+			PESElm.program_packet_sequence_counter_flag = (buffer[offset] & 0x20) >> 5;
+			PESElm.P_STD_buffer_flag = (buffer[offset] & 0x10) >> 4;
+			PESElm.PES_extension_flag_2 = buffer[offset] & 0x1;
+
+			offset += 1;
+
+			if(PESElm.PES_private_data_flag == 0x1)
+			{
+				offset += 16;
+			}
+
+			if(PESElm.pack_header_field_flag == 0x1)
+			{
+				PESElm.pack_field_length = buffer[offset];
+				offset = offset + 1 + PESElm.pack_field_length;
+			}
+
+			if(PESElm.program_packet_sequence_counter_flag == 0x1)
+			{
+				offset += 2;
+			}
+
+			if(PESElm.P_STD_buffer_flag == 0x1)
+			{
+				offset += 2;
+			}
+
+			if(PESElm.PES_extension_flag_2 == 0x1)
+			{
+				PESElm.PES_extension_field_length = buffer[offset] & 0x7f;
+				offset = offset + 1 + PESElm.PES_extension_field_length;
+			}
+
+		}
+	}
+
+	
 
 //	offset = offset + PMTElm.section_length + 3 + 1;
 
@@ -452,6 +585,7 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 {
 	int offset = 4;
 	char audioVideoFlag = 0;
+	int proNum = -1;
 
 	if(bufferLen <= offset)
 		return FALSE;
@@ -514,10 +648,15 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 					parsePMT(header.PID, buffer, bufferLen, offset);
 				}
 
-				audioVideoFlag = isPESPID(header.PID);
-				if(audioVideoFlag)
+				audioVideoFlag = isPESPID(header.PID, &proNum);
+				if(audioVideoFlag == AUDIO_FLAG)
 				{
-					parsePES(buffer, bufferLen, offset, audioVideoFlag);
+//					parsePES(buffer, bufferLen, offset, audioVideoFlag);
+				}
+				else if(audioVideoFlag == VIDEO_FLAG)
+				{
+					if(proNum == programWantToPlay)
+						fwrite(buffer + offset, sizeof(char), bufferLen - offset, outPutFp);
 				}
 		}
 	}	

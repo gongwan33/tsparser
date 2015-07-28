@@ -17,6 +17,6 @@ tsparser.o:tsparser.c ./include/tsparser.h
 
 .PHONY:clean
 clean:
-	rm $(EXECNAME) *.o tmp.dat
+	rm $(EXECNAME) *.o tmp.dat outPutProgram.ts
 
 

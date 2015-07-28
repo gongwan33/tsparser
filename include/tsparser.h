@@ -19,6 +19,21 @@
 #define MAX_PROGRAM_NUMBER 600
 #define MAX_PER_PMT_NUMBER 10
 
+#define program_stream_map						0xbc
+#define padding_stream							0xbe
+#define private_stream_2						0xbf
+#define ECM										0xf0
+#define EMM										0xf1
+#define program_stream_directory				0xff
+#define DSMCC_stream							0xf2
+#define ITU_T_Rec_H_222_1_type_E_stream			0xf8
+
+#define fast_forward							0x00
+#define slow_motion								0x01
+#define	freeze_frame							0x02
+#define fast_reverse							0x03
+#define slow_reverse							0x04
+
 char isFreqAvailable(int freq);
 char startParse();
 char endParse();
@@ -122,6 +137,14 @@ struct PES
 	unsigned int PES_CRC_flag:							1;
 	unsigned int PES_extension_flag:					1;
 	unsigned int PES_header_data_length:				8;
+	unsigned char trick_mode_control;
+	unsigned char PES_private_data_flag:				1;
+	unsigned char pack_header_field_flag:				1;
+	unsigned char program_packet_sequence_counter_flag:	1;
+	unsigned char P_STD_buffer_flag:					1;
+	unsigned char PES_extension_flag_2:					1;
+	unsigned char pack_field_length;
+	unsigned char PES_extension_field_length;
 	unsigned int PTS;
 	unsigned int DTS;
 	unsigned int ESCR_base;
@@ -180,6 +203,7 @@ struct mapPES
 struct MAP
 {
 	int PMT_PID;
+	unsigned int program_number;
 	struct mapPES* mapPESElm[MAX_PER_PMT_NUMBER];
 	unsigned int mapNumber;
 } mapElm[MAX_PROGRAM_NUMBER];
