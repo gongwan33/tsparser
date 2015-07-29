@@ -8,16 +8,18 @@
 #ifndef TSPARSER_H
 #define TSPARSER_H
 
-#define TRUE	1
-#define FALSE	0
+#define TRUE									1
+#define FALSE									0
 
-#define AUDIO_FLAG	2
-#define VIDEO_FLAG	3
+#define TS_PACK_SIZE							188
 
-#define FILE_BUFFER_SIZE 100*1024
-#define PACK_BUFFER_SIZE 4*1024
-#define MAX_PROGRAM_NUMBER 600
-#define MAX_PER_PMT_NUMBER 10
+#define AUDIO_FLAG								2
+#define VIDEO_FLAG								3
+
+#define FILE_BUFFER_SIZE						1024*1024
+#define MAX_PROGRAM_NUMBER						600
+#define MAX_PER_PMT_NUMBER						10
+#define MAX_SERVICE_NUMBER						600
 
 #define program_stream_map						0xbc
 #define padding_stream							0xbe
@@ -33,6 +35,9 @@
 #define	freeze_frame							0x02
 #define fast_reverse							0x03
 #define slow_reverse							0x04
+
+#define service_description_section_actual		0x42
+#define service_description_section_other		0x46
 
 char isFreqAvailable(int freq);
 char startParse();
@@ -187,6 +192,31 @@ struct PMT
 	
 	unsigned int CRC_32;
 } PMTElm;
+
+struct serviceTable
+{
+	unsigned int service_id:					16;
+	unsigned char EIT_schedule_flag;
+	unsigned char EIT_present_following_flag;
+	unsigned int running_status:				3;
+	unsigned int free_CA_mode:					1;
+	unsigned int descriptors_loop_length:		12;
+};
+
+struct SDT
+{
+	unsigned char table_id;
+	unsigned int section_syntax_indicator:		1;
+	unsigned int section_length:				12;
+	unsigned int transport_stream_id;
+	unsigned char version_number:				5;
+	unsigned char current_next_indicator:		1;
+	unsigned char section_number;
+	unsigned char last_section_number;
+	unsigned int original_network_id;	
+	struct serviceTable* serviceTab[MAX_SERVICE_NUMBER];
+	unsigned int serviceTableNum;
+} SDTElm;
 
 struct pointerField
 {

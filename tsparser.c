@@ -21,7 +21,6 @@ static FILE* outPutFp;
 unsigned char* fileBuffer;
 int fileBufferP;
 int fileBufferLen;
-unsigned char* packBuffer;
 int packBufferP;
 int packBufferLen;
 char PATOkFlag = -1;
@@ -33,6 +32,7 @@ int programPointer = 0;
 int mapSectionLen = 0;
 unsigned int lastPATVersion = 0;
 unsigned int lastPMTVersion = 0;
+unsigned int lastSDTVersion = 0;
 
 extern int programWantToPlay;
 
@@ -129,10 +129,23 @@ static void releaseProgramList()
 	}
 }
 
+static void releaseServiceList()
+{
+	int i = 0;
+
+	for(i = 0; i < MAX_SERVICE_NUMBER; i++)
+	{
+		if(SDTElm.serviceTab[i] != NULL)
+		{
+			free(SDTElm.serviceTab[i]);
+		}
+		
+	}
+}
+
 char startParse()
 {
 	fileBuffer = (unsigned char*)malloc(FILE_BUFFER_SIZE);	
-	packBuffer = (unsigned char*)malloc(PACK_BUFFER_SIZE);
 
 	initProgramList();
 	memset(&header, 0, sizeof(header));
@@ -154,13 +167,11 @@ char endParse()
 	if(fileBuffer != NULL)
 		free(fileBuffer);			
 
-	if(packBuffer != NULL)
-		free(packBuffer);
-
 	if(PATElm.programInfoElm != NULL)
 		free(PATElm.programInfoElm);
 
 	releaseProgramList();
+	releaseServiceList();
 }
 
 int openTSFile(int freq)
@@ -189,7 +200,7 @@ int closeTSFile()
 
 static void printStructInfo(int flag)
 {
-	int i = 0;
+	int i = 0, j = 0;
 
 	switch(flag)
 	{
@@ -275,6 +286,27 @@ static void printStructInfo(int flag)
 			printf("---------------------------------------------\n");
 			break;
 
+		case 5:
+			printf("---------------------------------------------\n");
+			printf("SDT Info:\n");
+			printf("table_id:\t 0x%x\n", SDTElm.table_id);
+			printf("section_syntax_indicator:\t 0x%x\n", SDTElm.section_syntax_indicator);
+			printf("section_length:\t 0x%x\n", SDTElm.section_length);
+			printf("transport_stream_id:\t 0x%x\n", SDTElm.transport_stream_id);
+			printf("version_number:\t 0x%x\n", SDTElm.version_number);
+			printf("current_next_indicator:\t 0x%x\n", SDTElm.current_next_indicator);
+			printf("section_number:\t 0x%x\n", SDTElm.section_number);
+			printf("last_section_number:\t 0x%x\n", SDTElm.last_section_number);
+			printf("original_network_id:\t 0x%x\n", SDTElm.original_network_id);
+			
+			for(i = 0; i < SDTElm.serviceTableNum; i++)
+			{
+				printf("service_id:\t 0x%x\n", SDTElm.serviceTab[i]->service_id);
+				printf("descriptors_loop_length:\t 0x%x\n", SDTElm.serviceTab[i]->descriptors_loop_length);
+			}
+			printf("---------------------------------------------\n");
+			break;
+
 		default:
 			printf("In printStructInfo: unknow flag!\n");
 	}
@@ -325,37 +357,40 @@ static int isPESPID(unsigned int PID, int* proNum)
 	return FALSE;
 }
 
-static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
+static int parsePAT(unsigned char* buffer, int bufferLen, int* offset)
 {
 	int i = 0;
 
-	if(bufferLen <= offset + 7)
+	if(bufferLen <= *offset + 7)
 		return FALSE;
 
 	lastPATVersion = PATElm.version_number;
 
-	PATElm.table_id = buffer[offset];
-	PATElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
+	PATElm.table_id = buffer[*offset];
+	PATElm.section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
 
 	if(PATElm.section_syntax_indicator != 1)
 		return FALSE;
 
-	PATElm.section_length = ((buffer[offset + 1] & 0x0f) << 8) | (buffer[offset + 2] & 0xff);
+	PATElm.section_length = ((buffer[*offset + 1] & 0x0f) << 8) | (buffer[*offset + 2] & 0xff);
 
 	if(PATElm.section_length > 1021 || (PATElm.section_length & 0xc000) != 0 || PATElm.section_length + 3 > bufferLen)
+	{
 		return FALSE;
+	}
 
-	PATElm.transport_stream_id = (buffer[offset + 3] << 8) | buffer[offset + 4];
-	PATElm.version_number = (buffer[offset + 5] & 0x3e) >> 1;
-	PATElm.current_next_indicator = (buffer[offset + 5] & 0x01);
-	PATElm.section_number = buffer[offset + 6];
-	PATElm.last_section_number = buffer[offset + 7];
+	PATElm.transport_stream_id = (buffer[*offset + 3] << 8) | buffer[*offset + 4];
+	PATElm.version_number = (buffer[*offset + 5] & 0x3e) >> 1;
+	PATElm.current_next_indicator = (buffer[*offset + 5] & 0x01);
+	PATElm.section_number = buffer[*offset + 6];
+	PATElm.last_section_number = buffer[*offset + 7];
 
 	if(PATOkFlag == -1)
 		PATOkFlag = 1;
 
 	if(lastPATVersion >= PATElm.version_number)
 	{
+		*offset = *offset + PATElm.section_length + 3 + 1;
 		return TRUE;
 	}
 
@@ -366,45 +401,48 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int offset)
 
 	for(i = 0; i < programCount; i++)
 	{
-		PATElm.programInfoElm[i].program_number = (buffer[offset + i*4 + 8] << 8) | buffer[offset + i*4 + 9];
-		PATElm.programInfoElm[i].network_program_PID = ((buffer[offset + i*4 + 10] & 0x01) << 8) | buffer[offset + i*4 + 11];
+		PATElm.programInfoElm[i].program_number = (buffer[*offset + i*4 + 8] << 8) | buffer[*offset + i*4 + 9];
+		PATElm.programInfoElm[i].network_program_PID = ((buffer[*offset + i*4 + 10] & 0x01) << 8) | buffer[*offset + i*4 + 11];
 	}
 
 //	printStructInfo(1);
-	offset = offset + PATElm.section_length + 3 + 1;
+	*offset = *offset + PATElm.section_length + 3 + 1;
 
 	return TRUE;
 }
 
-static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int offset)
+static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int* offset)
 {
 	int i = 0, j = 0;
 	int jump = 0;
 	unsigned int skipLen = 0;
 
-	if(bufferLen <= offset + 7)
+	if(bufferLen <= *offset + 7)
 		return FALSE;
 
 	lastPMTVersion = PMTElm.version_number;
 
-	PMTElm.table_id = buffer[offset];
-	PMTElm.section_syntax_indicator = (buffer[offset + 1] & 0x80) >> 7;
+	PMTElm.table_id = buffer[*offset];
+	PMTElm.section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
 
 	if(PMTElm.section_syntax_indicator != 1)
 		return FALSE;
 
-	PMTElm.section_length = ((buffer[offset + 1] & 0x0f) << 8) | (buffer[offset + 2] & 0xff);
+	PMTElm.section_length = ((buffer[*offset + 1] & 0x0f) << 8) | buffer[*offset + 2];
 
 	if(PMTElm.section_length <= 1021 && (PMTElm.section_length & 0xc000) != 0)
+	{
+		*offset = *offset + PMTElm.section_length + 3 + 1;
 		return FALSE;
+	}
 
-	PMTElm.program_number = (buffer[offset + 3] << 8) | buffer[offset + 4];
-	PMTElm.version_number = (buffer[offset + 5] & 0x3e) >> 1;
-	PMTElm.current_next_indicator = (buffer[offset + 5] & 0x01);
-	PMTElm.section_number = buffer[offset + 6];
-	PMTElm.last_section_number = buffer[offset + 7];
-	PMTElm.PCR_PID = ((buffer[offset + 8] & 0x1f) << 8) | buffer[offset + 9];
-	PMTElm.program_info_length = ((buffer[offset + 10] & 0xf) << 8) | buffer[offset + 11];
+	PMTElm.program_number = (buffer[*offset + 3] << 8) | buffer[*offset + 4];
+	PMTElm.version_number = (buffer[*offset + 5] & 0x3e) >> 1;
+	PMTElm.current_next_indicator = (buffer[*offset + 5] & 0x01);
+	PMTElm.section_number = buffer[*offset + 6];
+	PMTElm.last_section_number = buffer[*offset + 7];
+	PMTElm.PCR_PID = ((buffer[*offset + 8] & 0x1f) << 8) | buffer[*offset + 9];
+	PMTElm.program_info_length = ((buffer[*offset + 10] & 0xf) << 8) | buffer[*offset + 11];
 
 	if(PMTOkFlag == -1)
 		PMTOkFlag = 1;
@@ -424,7 +462,7 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int 
 	mapElm[programPointer].PMT_PID = PID;
 	mapElm[programPointer].program_number = PMTElm.program_number;
 
-	jump = offset + 12 + PMTElm.program_info_length;
+	jump = *offset + 12 + PMTElm.program_info_length;
 
 	for(i = 0; i < mapSectionLen; i = i + skipLen)
 	{
@@ -442,65 +480,65 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int 
 			break;
 	}
 
-	offset = offset + PMTElm.section_length + 3 + 1;
+	*offset = *offset + PMTElm.section_length + 3 + 1;
 
 //	printStructInfo(3);
 	return TRUE;
 }
 
-static int parsePES(unsigned char* buffer, int bufferLen, int offset, int flag)
+static int parsePES(unsigned char* buffer, int bufferLen, int* offset, int flag)
 {
-	if(bufferLen <= offset + 7)
+	if(bufferLen <= *offset + 7)
 		return FALSE;
 
-	PESElm.stream_id = buffer[offset + 3];
-	PESElm.PES_packet_length = (buffer[offset + 4] <<  8)| buffer[offset + 5];
-	offset += 6;
+	PESElm.stream_id = buffer[*offset + 3];
+	PESElm.PES_packet_length = (buffer[*offset + 4] <<  8)| buffer[*offset + 5];
+	*offset += 6;
 
 	if(PESElm.stream_id != program_stream_map && PESElm.stream_id != padding_stream \
 		&& PESElm.stream_id != private_stream_2 && PESElm.stream_id != ECM \
 		&& PESElm.stream_id != EMM && PESElm.stream_id != program_stream_directory \
 		&& PESElm.stream_id != DSMCC_stream && PESElm.stream_id != ITU_T_Rec_H_222_1_type_E_stream)
 	{
-		PESElm.PES_scrambling_control = (buffer[offset] & 0x30) >> 4;
-		PESElm.PES_priority = (buffer[offset] & 0x8) >> 3;
-		PESElm.data_alignment_indicator = (buffer[offset] & 0x4) >> 2;
-		PESElm.copyright = (buffer[offset] & 0x2) >> 1;
-		PESElm.original_or_copy = (buffer[offset] & 0x1);
-		PESElm.PTS_DTS_flags = (buffer[offset + 1] & 0xc0) >> 6;
-		PESElm.ESCR_flag = (buffer[offset + 1] & 0x20) >> 5;
-		PESElm.ES_rate_flag = (buffer[offset + 1] & 0x10) >> 4;
-		PESElm.DSM_trick_mode_flag = (buffer[offset + 1] & 0x8) >> 3;
-		PESElm.additional_copy_info_flag = (buffer[offset + 1] & 0x4) >> 2;
-		PESElm.PES_CRC_flag = (buffer[offset + 1] & 0x2) >> 1;
-		PESElm.PES_extension_flag = buffer[offset + 1] & 0x1;
-		PESElm.PES_header_data_length = buffer[offset + 2];
+		PESElm.PES_scrambling_control = (buffer[*offset] & 0x30) >> 4;
+		PESElm.PES_priority = (buffer[*offset] & 0x8) >> 3;
+		PESElm.data_alignment_indicator = (buffer[*offset] & 0x4) >> 2;
+		PESElm.copyright = (buffer[*offset] & 0x2) >> 1;
+		PESElm.original_or_copy = (buffer[*offset] & 0x1);
+		PESElm.PTS_DTS_flags = (buffer[*offset + 1] & 0xc0) >> 6;
+		PESElm.ESCR_flag = (buffer[*offset + 1] & 0x20) >> 5;
+		PESElm.ES_rate_flag = (buffer[*offset + 1] & 0x10) >> 4;
+		PESElm.DSM_trick_mode_flag = (buffer[*offset + 1] & 0x8) >> 3;
+		PESElm.additional_copy_info_flag = (buffer[*offset + 1] & 0x4) >> 2;
+		PESElm.PES_CRC_flag = (buffer[*offset + 1] & 0x2) >> 1;
+		PESElm.PES_extension_flag = buffer[*offset + 1] & 0x1;
+		PESElm.PES_header_data_length = buffer[*offset + 2];
 		
-		offset += 3;
+		*offset += 3;
 
 		if(PESElm.PTS_DTS_flags == 0x2)
 		{
-			offset += 5;
+			*offset += 5;
 		}
 
 		if(PESElm.PTS_DTS_flags == 0x3)
 		{
-			offset += 10;
+			*offset += 10;
 		}
 
 		if(PESElm.ESCR_flag == 0x1)
 		{
-			offset += 6;
+			*offset += 6;
 		}
 
 		if(PESElm.ES_rate_flag == 0x1)
 		{
-			offset += 3;
+			*offset += 3;
 		}
 
 		if(PESElm.DSM_trick_mode_flag == 0x1)
 		{
-			PESElm.trick_mode_control = (buffer[offset] & 0xe0) >> 5;
+			PESElm.trick_mode_control = (buffer[*offset] & 0xe0) >> 5;
 			if(PESElm.trick_mode_control == fast_forward)
 			{
 			}
@@ -520,54 +558,54 @@ static int parsePES(unsigned char* buffer, int bufferLen, int offset, int flag)
 			{
 			}
 
-			offset += 1;
+			*offset += 1;
 		}
 
 		if(PESElm.additional_copy_info_flag == 0x1)
 		{
-			offset += 1;
+			*offset += 1;
 		}
 
 		if(PESElm.PES_CRC_flag == 0x1)
 		{
-			offset += 1;
+			*offset += 1;
 		}
 
 		if(PESElm.PES_extension_flag == 0x1)
 		{
-			PESElm.PES_private_data_flag = (buffer[offset] & 0x80) >> 7;
-			PESElm.pack_header_field_flag = (buffer[offset] & 0x40) >> 6;
-			PESElm.program_packet_sequence_counter_flag = (buffer[offset] & 0x20) >> 5;
-			PESElm.P_STD_buffer_flag = (buffer[offset] & 0x10) >> 4;
-			PESElm.PES_extension_flag_2 = buffer[offset] & 0x1;
+			PESElm.PES_private_data_flag = (buffer[*offset] & 0x80) >> 7;
+			PESElm.pack_header_field_flag = (buffer[*offset] & 0x40) >> 6;
+			PESElm.program_packet_sequence_counter_flag = (buffer[*offset] & 0x20) >> 5;
+			PESElm.P_STD_buffer_flag = (buffer[*offset] & 0x10) >> 4;
+			PESElm.PES_extension_flag_2 = buffer[*offset] & 0x1;
 
-			offset += 1;
+			*offset += 1;
 
 			if(PESElm.PES_private_data_flag == 0x1)
 			{
-				offset += 16;
+				*offset += 16;
 			}
 
 			if(PESElm.pack_header_field_flag == 0x1)
 			{
-				PESElm.pack_field_length = buffer[offset];
-				offset = offset + 1 + PESElm.pack_field_length;
+				PESElm.pack_field_length = buffer[*offset];
+				*offset = *offset + 1 + PESElm.pack_field_length;
 			}
 
 			if(PESElm.program_packet_sequence_counter_flag == 0x1)
 			{
-				offset += 2;
+				*offset += 2;
 			}
 
 			if(PESElm.P_STD_buffer_flag == 0x1)
 			{
-				offset += 2;
+				*offset += 2;
 			}
 
 			if(PESElm.PES_extension_flag_2 == 0x1)
 			{
-				PESElm.PES_extension_field_length = buffer[offset] & 0x7f;
-				offset = offset + 1 + PESElm.PES_extension_field_length;
+				PESElm.PES_extension_field_length = buffer[*offset] & 0x7f;
+				*offset = *offset + 1 + PESElm.PES_extension_field_length;
 			}
 
 		}
@@ -575,9 +613,70 @@ static int parsePES(unsigned char* buffer, int bufferLen, int offset, int flag)
 
 	
 
-//	offset = offset + PMTElm.section_length + 3 + 1;
+	*offset = *offset + PMTElm.section_length + 3 + 1;
 
-	printStructInfo(4);
+//	printStructInfo(4);
+	return TRUE;
+}
+
+static int parseSI(unsigned char* buffer, int bufferLen, int* offset)
+{
+	int i = 0, j = 0;
+	int jump = 0;
+	unsigned int skipLen = 0;
+	unsigned char table_id;
+	unsigned sectionLen = 0;
+
+	if(bufferLen <= *offset + 7)
+		return FALSE;
+
+	table_id = buffer[*offset];
+
+	switch(table_id)
+	{
+		case service_description_section_actual:
+		case service_description_section_other:
+			SDTElm.table_id = table_id;	
+			SDTElm.section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
+			SDTElm.section_length = ((buffer[*offset + 1] & 0xf) << 8) | buffer[*offset + 2];
+			SDTElm.transport_stream_id = (buffer[*offset + 3] << 8) | buffer[*offset + 4];
+			SDTElm.version_number = (buffer[*offset + 5] & 0x3e) >> 1; 
+
+			if(SDTElm.version_number <= lastSDTVersion)
+				return TRUE;
+
+
+			SDTElm.current_next_indicator = buffer[*offset + 5] & 0x1;
+			SDTElm.section_number = buffer[*offset + 6];
+			SDTElm.last_section_number = buffer[*offset + 7];
+			SDTElm.original_network_id = (buffer[*offset + 8] << 8) | buffer[*offset + 9];
+
+			sectionLen = SDTElm.section_length - 12;
+
+			jump = *offset + 11;
+
+			SDTElm.serviceTableNum = 0;
+			for(i = 0; i < sectionLen; i = i + skipLen)
+			{
+				if(SDTElm.serviceTab[i] == NULL)
+					SDTElm.serviceTab[i] = (struct serviceTable*) malloc(sizeof(struct serviceTable));
+
+				SDTElm.serviceTab[i] -> service_id = (buffer[jump + i] << 8) | buffer[jump + 1 + i];
+				SDTElm.serviceTab[i] -> descriptors_loop_length = ((buffer[jump + i + 3] & 0xf) << 8) | buffer[jump + i + 4];
+				SDTElm.serviceTableNum++;
+
+				skipLen = 5 + SDTElm.serviceTab[i] -> descriptors_loop_length;  
+			printf("jump %d skip %d i %d sectionLen %d looplen %d id %d sectionlen %d\n", jump, skipLen, i, sectionLen, SDTElm.serviceTab[i]->descriptors_loop_length, SDTElm.serviceTab[i]->service_id, SDTElm.section_length);
+			}
+
+			*offset = *offset + PMTElm.section_length + 3 + 1;
+
+			lastSDTVersion = SDTElm.version_number;
+
+			printStructInfo(5);
+			break;
+	}
+
 	return TRUE;
 }
 
@@ -586,7 +685,7 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 	int offset = 4;
 	char audioVideoFlag = 0;
 	int proNum = -1;
-
+	
 	if(bufferLen <= offset)
 		return FALSE;
 
@@ -639,29 +738,33 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 		switch(header.PID)
 		{
 			case 0x0000:
-			parsePAT(buffer, bufferLen, offset);	
-			break;
+				parsePAT(buffer, bufferLen, &offset);	
+				break;
+
+			case 0x0011:
+//				parseSI(buffer, bufferLen, &offset);
+				break;
 
 			default:
 				if(isPMTPID(header.PID))
 				{
-					parsePMT(header.PID, buffer, bufferLen, offset);
+					parsePMT(header.PID, buffer, bufferLen, &offset);
 				}
 
 				audioVideoFlag = isPESPID(header.PID, &proNum);
 				if(audioVideoFlag == AUDIO_FLAG)
 				{
-//					parsePES(buffer, bufferLen, offset, audioVideoFlag);
+//					parsePES(buffer, bufferLen, &offset, audioVideoFlag);
 				}
 				else if(audioVideoFlag == VIDEO_FLAG)
 				{
+//					parsePES(buffer, bufferLen, &offset, audioVideoFlag);
 					if(proNum == programWantToPlay)
 						fwrite(buffer + offset, sizeof(char), bufferLen - offset, outPutFp);
 				}
 		}
 	}	
-
-	return TRUE;
+	return offset;
 }
 
 static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
@@ -672,23 +775,24 @@ static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
 	if(*bufferP < 0 || bufferLen < 0 || buffer == NULL)
 		return FALSE;
 
-	while(p + baseP < bufferLen)
+	while(baseP < bufferLen - TS_PACK_SIZE)
 	{
 		if(buffer[p + baseP] == 0x47)
 		{
-			if(p < PACK_BUFFER_SIZE)
+			baseP = baseP + p;
+
+			if(p < bufferLen - baseP)
 			{
-				memcpy(packBuffer, buffer + baseP, p);
-				analysePacket(packBuffer, p);
+				analysePacket(buffer + baseP, bufferLen - baseP);
 #ifdef PRINT_DEBUG
 //			printStructInfo(0);
 #endif
 			}
 			else
 				printf("Special pack size!\n");
-
-			baseP = p + baseP;
-			p = 188;
+			
+			baseP += TS_PACK_SIZE;
+			p = 0;
 		}
 		else	
 			p++;
