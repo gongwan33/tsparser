@@ -12,6 +12,8 @@
 #define FALSE									0
 
 #define TS_PACK_SIZE							188
+#define TMP_SPACE_LIST_SIZE						1000
+#define MAX_PACK_SIZE							4*1024
 
 #define AUDIO_FLAG								2
 #define VIDEO_FLAG								3
@@ -39,12 +41,25 @@
 #define service_description_section_actual		0x42
 #define service_description_section_other		0x46
 
+#define network_information_section_actual		0x40
+#define network_information_section_other		0x41
+
 char isFreqAvailable(int freq);
 char startParse();
 char endParse();
 int openTSFile(int freq);
 int closeTSFile();
 char parseTS(int freq);
+
+struct tmpSpace
+{
+	char emptyFlag;
+	unsigned int PID;
+	unsigned char continuity_counter;
+	unsigned char space[MAX_PACK_SIZE];
+	unsigned int length;
+	unsigned int section_length;
+} tmpSpaceList[TMP_SPACE_LIST_SIZE];
 
 struct tsHeader
 {
@@ -193,6 +208,15 @@ struct PMT
 	unsigned int CRC_32;
 } PMTElm;
 
+struct multilingual_service_name_desp_content
+{
+	unsigned int ISO_639_language_code;
+	unsigned char service_provider_name_length;
+	char* service_provider;
+	unsigned char service_name_length;
+	char* service_name;
+};
+
 struct serviceTable
 {
 	unsigned int service_id:					16;
@@ -201,6 +225,8 @@ struct serviceTable
 	unsigned int running_status:				3;
 	unsigned int free_CA_mode:					1;
 	unsigned int descriptors_loop_length:		12;
+	struct multilingual_service_name_desp_content msdc[51];
+	unsigned int service_count;
 };
 
 struct SDT
@@ -216,7 +242,22 @@ struct SDT
 	unsigned int original_network_id;	
 	struct serviceTable* serviceTab[MAX_SERVICE_NUMBER];
 	unsigned int serviceTableNum;
-} SDTElm;
+} SDTElm[2];
+
+struct NIT
+{
+	unsigned char table_id;
+	unsigned int section_syntax_indicator:		1;
+	unsigned int section_length:				12;
+	unsigned int network_id:					16;
+	unsigned char version_number:				5;
+	unsigned char current_next_indicator:		1;
+	unsigned char section_number;
+	unsigned char last_section_number;
+	unsigned int original_network_id;	
+
+
+} NITElm[2];
 
 struct pointerField
 {

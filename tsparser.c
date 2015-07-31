@@ -29,10 +29,13 @@ char PMTOkFlag = -1;
 int programCount = 0;
 int programPointer = 0;
 
-int mapSectionLen = 0;
-unsigned int lastPATVersion = 0;
-unsigned int lastPMTVersion = 0;
-unsigned int lastSDTVersion = 0;
+int mapSectionLen = -1;
+int lastPATVersion = -1;
+int lastPMTVersion = -1;
+int lastSDTVersionActual = -1;
+int lastSDTVersionOther = -1;
+int lastNITVersionActual = -1;
+int lastNITVersionOther = -1;
 
 extern int programWantToPlay;
 
@@ -131,16 +134,68 @@ static void releaseProgramList()
 
 static void releaseServiceList()
 {
-	int i = 0;
+	int i = 0, j = 0;
 
 	for(i = 0; i < MAX_SERVICE_NUMBER; i++)
 	{
-		if(SDTElm.serviceTab[i] != NULL)
-		{
-			free(SDTElm.serviceTab[i]);
-		}
+		for(j = 0; j < 2; j++)
+			if(SDTElm[j].serviceTab[i] != NULL )
+			{
+				free(SDTElm[j].serviceTab[i]);
+			}
 		
 	}
+}
+
+static void initTmpSpace()
+{
+	int i = 0;
+
+	for(i = 0; i < TMP_SPACE_LIST_SIZE; i++)
+	{
+		tmpSpaceList[i].emptyFlag = -1;
+		tmpSpaceList[i].PID = 0;
+		tmpSpaceList[i].length = 0;		
+	}
+}
+
+static void releaseTmpSpace()
+{
+	int i = 0;
+
+	for(i = 0; i < TMP_SPACE_LIST_SIZE; i++)
+	{
+		tmpSpaceList[i].emptyFlag = -1;
+		tmpSpaceList[i].length = 0;		
+	}
+}
+
+static int getTmpSpace()
+{
+	int i = 0;
+
+	for(i = 0; i < TMP_SPACE_LIST_SIZE; i++)
+	{
+		if(tmpSpaceList[i].emptyFlag == -1)
+		{
+			return i;
+		}
+	}	
+
+	return -1;
+}
+
+static int findTmpSpaceByPID(unsigned int PID)
+{
+	int i = 0;
+
+	for(i = 0; i < TMP_SPACE_LIST_SIZE; i++)
+	{
+		if(tmpSpaceList[i].PID == PID && tmpSpaceList[i].emptyFlag != -1)
+			return i;
+	}
+
+	return -1;
 }
 
 char startParse()
@@ -148,6 +203,7 @@ char startParse()
 	fileBuffer = (unsigned char*)malloc(FILE_BUFFER_SIZE);	
 
 	initProgramList();
+	initTmpSpace();
 	memset(&header, 0, sizeof(header));
 
 	if((outPutFp = fopen("./outPutProgram.ts", "wr+")) == NULL)
@@ -172,6 +228,7 @@ char endParse()
 
 	releaseProgramList();
 	releaseServiceList();
+	releaseTmpSpace();
 }
 
 int openTSFile(int freq)
@@ -287,24 +344,38 @@ static void printStructInfo(int flag)
 			break;
 
 		case 5:
-			printf("---------------------------------------------\n");
-			printf("SDT Info:\n");
-			printf("table_id:\t 0x%x\n", SDTElm.table_id);
-			printf("section_syntax_indicator:\t 0x%x\n", SDTElm.section_syntax_indicator);
-			printf("section_length:\t 0x%x\n", SDTElm.section_length);
-			printf("transport_stream_id:\t 0x%x\n", SDTElm.transport_stream_id);
-			printf("version_number:\t 0x%x\n", SDTElm.version_number);
-			printf("current_next_indicator:\t 0x%x\n", SDTElm.current_next_indicator);
-			printf("section_number:\t 0x%x\n", SDTElm.section_number);
-			printf("last_section_number:\t 0x%x\n", SDTElm.last_section_number);
-			printf("original_network_id:\t 0x%x\n", SDTElm.original_network_id);
-			
-			for(i = 0; i < SDTElm.serviceTableNum; i++)
+			for(j = 0; j < 2; j++)
 			{
-				printf("service_id:\t 0x%x\n", SDTElm.serviceTab[i]->service_id);
-				printf("descriptors_loop_length:\t 0x%x\n", SDTElm.serviceTab[i]->descriptors_loop_length);
+				printf("---------------------------------------------\n");
+				printf("SDT Info:\n");
+				printf("table_id:\t 0x%x\n", SDTElm[j].table_id);
+				printf("section_syntax_indicator:\t 0x%x\n", SDTElm[j].section_syntax_indicator);
+				printf("section_length:\t %d\n", SDTElm[j].section_length);
+				printf("transport_stream_id:\t 0x%x\n", SDTElm[j].transport_stream_id);
+				printf("version_number:\t 0x%x\n", SDTElm[j].version_number);
+				printf("current_next_indicator:\t 0x%x\n", SDTElm[j].current_next_indicator);
+				printf("section_number:\t 0x%x\n", SDTElm[j].section_number);
+				printf("last_section_number:\t 0x%x\n", SDTElm[j].last_section_number);
+				printf("original_network_id:\t 0x%x\n", SDTElm[j].original_network_id);
+
+				for(i = 0; i < SDTElm[j].serviceTableNum; i++)
+				{
+					printf("service_id:\t 0x%x\n", SDTElm[j].serviceTab[i]->service_id);
+					printf("descriptors_loop_length:\t 0x%x\n", SDTElm[j].serviceTab[i]->descriptors_loop_length);
+					int m = 0;
+					struct multilingual_service_name_desp_content* msdc =  SDTElm[j].serviceTab[i]->msdc;
+					for(m = 0; m < SDTElm[j].serviceTab[i]->service_count; m++)
+					{
+						printf("******************************\n");
+						printf("\t language code:\t 0x%x\n", msdc[m].ISO_639_language_code);
+						printf("\t service provider name length:\t 0x%x\n", msdc[m].service_provider_name_length);
+						printf("\t service provider:\t %s\n", msdc[m].service_provider);
+						printf("\t service name:\t %s\n", msdc[m].service_name);
+						printf("******************************\n");
+					}
+				}
+				printf("---------------------------------------------\n");
 			}
-			printf("---------------------------------------------\n");
 			break;
 
 		default:
@@ -619,63 +690,366 @@ static int parsePES(unsigned char* buffer, int bufferLen, int* offset, int flag)
 	return TRUE;
 }
 
+static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int actualOtherFlag, int stIndex)
+{
+	int i = 0, j = 0, m = 0;
+	unsigned char desp_tag;
+	unsigned int desp_length = 0;
+	struct multilingual_service_name_desp_content* msdc = SDTElm[actualOtherFlag].serviceTab[stIndex]->msdc; 
+	unsigned char servicePLen = 0, serviceNLen = 0;
+
+	for(i = 0; i < bufferLen; i = i + desp_length + 2)
+	{
+		desp_tag = buffer[i];
+		desp_length = buffer[i + 1];
+		switch(desp_tag)
+		{
+			case 0x5d:
+				SDTElm[actualOtherFlag].serviceTab[stIndex]->service_count = 0;
+				for(m = 0; m < desp_length; m = m + servicePLen + serviceNLen + 5 )
+				{
+					msdc[j].ISO_639_language_code = (buffer[m + i + 2] << 16) | (buffer[m + i + 3] << 8) | (buffer[m + i + 4]);
+					servicePLen = buffer[m + i + 5];
+					msdc[j].service_provider_name_length = servicePLen;
+
+					if(msdc[j].service_provider == NULL)
+						msdc[j].service_provider = (char*)malloc(msdc[j].service_provider_name_length + 1);
+					memcpy(msdc[j].service_provider, buffer + m + i + 6, msdc[j].service_provider_name_length);
+
+					*(msdc[j].service_provider + msdc[j].service_provider_name_length) = '\0';
+
+					serviceNLen = buffer[m + i + 6 + servicePLen];
+					msdc[j].service_name_length = serviceNLen;
+
+					if(msdc[j].service_name == NULL)
+						msdc[j].service_name = (char*)malloc(msdc[j].service_name_length + 1);
+					memcpy(msdc[j].service_name, buffer + m + i + 7 + servicePLen, msdc[j].service_name_length);
+
+					*(msdc[j].service_name + msdc[j].service_name_length) = '\0';
+
+					SDTElm[actualOtherFlag].serviceTab[stIndex]->service_count++;
+
+					j++;
+				}
+				break;
+
+			case 0x40:
+				printf("get!!\n");
+				break;
+		}
+	}
+
+	return TRUE;
+}
+
 static int parseSI(unsigned char* buffer, int bufferLen, int* offset)
 {
 	int i = 0, j = 0;
 	int jump = 0;
+	int spacePos = 0;
+	int versionNumber = 0;
 	unsigned int skipLen = 0;
 	unsigned char table_id;
 	unsigned sectionLen = 0;
+	int actualOtherFlag = 1;
 
 	if(bufferLen <= *offset + 7)
 		return FALSE;
 
-	table_id = buffer[*offset];
-
-	switch(table_id)
+	if(header.payload_unit_start_indicator == 0x1)
 	{
-		case service_description_section_actual:
-		case service_description_section_other:
-			SDTElm.table_id = table_id;	
-			SDTElm.section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
-			SDTElm.section_length = ((buffer[*offset + 1] & 0xf) << 8) | buffer[*offset + 2];
-			SDTElm.transport_stream_id = (buffer[*offset + 3] << 8) | buffer[*offset + 4];
-			SDTElm.version_number = (buffer[*offset + 5] & 0x3e) >> 1; 
+		table_id = buffer[*offset];
+		switch(table_id)
+		{
+			case service_description_section_actual:
+				actualOtherFlag = 0;
+			case service_description_section_other:
 
-			if(SDTElm.version_number <= lastSDTVersion)
-				return TRUE;
+				versionNumber = (buffer[*offset + 5] & 0x3e) >> 1; 
+				if((table_id == service_description_section_actual && versionNumber <= lastSDTVersionActual) \
+						|| (table_id == service_description_section_other && versionNumber <= lastSDTVersionOther))
+					return TRUE;
 
+				SDTElm[actualOtherFlag].table_id = table_id;	
+				SDTElm[actualOtherFlag].section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
+				SDTElm[actualOtherFlag].section_length = ((buffer[*offset + 1] & 0xf) << 8) | buffer[*offset + 2];
+				SDTElm[actualOtherFlag].transport_stream_id = (buffer[*offset + 3] << 8) | buffer[*offset + 4];
+				SDTElm[actualOtherFlag].version_number = versionNumber; 
+				SDTElm[actualOtherFlag].current_next_indicator = buffer[*offset + 5] & 0x1;
+				SDTElm[actualOtherFlag].section_number = buffer[*offset + 6];
+				SDTElm[actualOtherFlag].last_section_number = buffer[*offset + 7];
+				SDTElm[actualOtherFlag].original_network_id = (buffer[*offset + 8] << 8) | buffer[*offset + 9];
 
-			SDTElm.current_next_indicator = buffer[*offset + 5] & 0x1;
-			SDTElm.section_number = buffer[*offset + 6];
-			SDTElm.last_section_number = buffer[*offset + 7];
-			SDTElm.original_network_id = (buffer[*offset + 8] << 8) | buffer[*offset + 9];
+				if(SDTElm[actualOtherFlag].section_length <= TS_PACK_SIZE - 3)
+				{
 
-			sectionLen = SDTElm.section_length - 12;
+					if(table_id == service_description_section_actual)
+						lastSDTVersionActual = SDTElm[actualOtherFlag].version_number;
+					else if(table_id == service_description_section_other)
+						lastSDTVersionOther = SDTElm[actualOtherFlag].version_number;
 
-			jump = *offset + 11;
+					sectionLen = SDTElm[actualOtherFlag].section_length - 12;
 
-			SDTElm.serviceTableNum = 0;
-			for(i = 0; i < sectionLen; i = i + skipLen)
-			{
-				if(SDTElm.serviceTab[i] == NULL)
-					SDTElm.serviceTab[i] = (struct serviceTable*) malloc(sizeof(struct serviceTable));
+					jump = *offset + 11;
 
-				SDTElm.serviceTab[i] -> service_id = (buffer[jump + i] << 8) | buffer[jump + 1 + i];
-				SDTElm.serviceTab[i] -> descriptors_loop_length = ((buffer[jump + i + 3] & 0xf) << 8) | buffer[jump + i + 4];
-				SDTElm.serviceTableNum++;
+					SDTElm[actualOtherFlag].serviceTableNum = 0;
 
-				skipLen = 5 + SDTElm.serviceTab[i] -> descriptors_loop_length;  
-			printf("jump %d skip %d i %d sectionLen %d looplen %d id %d sectionlen %d\n", jump, skipLen, i, sectionLen, SDTElm.serviceTab[i]->descriptors_loop_length, SDTElm.serviceTab[i]->service_id, SDTElm.section_length);
-			}
+					j = 0;
 
-			*offset = *offset + PMTElm.section_length + 3 + 1;
+					for(i = 0; i < sectionLen; i = i + skipLen)
+					{
+						if(SDTElm[actualOtherFlag].serviceTab[j] == NULL)
+							SDTElm[actualOtherFlag].serviceTab[j] = (struct serviceTable*) malloc(sizeof(struct serviceTable));
 
-			lastSDTVersion = SDTElm.version_number;
+						SDTElm[actualOtherFlag].serviceTab[j] -> service_id = (buffer[jump + i] << 8) | buffer[jump + 1 + i];
+						SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length = ((buffer[jump + i + 3] & 0xf) << 8) | buffer[jump + i + 4];
+						SDTElm[actualOtherFlag].serviceTableNum++;
+						
+						parseDescriptor(buffer + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j);
+						skipLen = 5 + SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length;  
 
-			printStructInfo(5);
-			break;
+						j++;
+					}
+
+				}
+				else
+				{
+					if((spacePos = getTmpSpace()) != -1)
+					{
+						memcpy(tmpSpaceList[spacePos].space, buffer + *offset, bufferLen - *offset);
+						tmpSpaceList[spacePos].length = bufferLen - *offset;
+						tmpSpaceList[spacePos].section_length = SDTElm[actualOtherFlag].section_length;
+						tmpSpaceList[spacePos].PID = header.PID;
+						tmpSpaceList[spacePos].continuity_counter = header.continuity_counter;
+						tmpSpaceList[spacePos].emptyFlag = 1;
+					}
+					else
+					{
+						printf("Error: no empty space left!");
+						return FALSE;
+					}
+				}
+				break;
+		}
+
 	}
+
+	if(header.payload_unit_start_indicator == 0)
+	{
+		if((spacePos = findTmpSpaceByPID(header.PID)) != -1)
+		{
+			if(tmpSpaceList[spacePos].length + bufferLen - *offset >= tmpSpaceList[spacePos].section_length)
+			{
+				memcpy(tmpSpaceList[spacePos].space + tmpSpaceList[spacePos].length, buffer + *offset, bufferLen - *offset);
+
+				table_id = tmpSpaceList[spacePos].space[0];
+
+				versionNumber = (tmpSpaceList[spacePos].space[5] & 0x3e) >> 1; 
+
+				if((table_id == service_description_section_actual && versionNumber <= lastSDTVersionActual) \
+						|| (table_id == service_description_section_other && versionNumber <= lastSDTVersionOther))
+					return TRUE;
+
+				switch(table_id)
+				{
+					case service_description_section_actual:
+						actualOtherFlag = 0;
+					case service_description_section_other:
+
+						SDTElm[actualOtherFlag].table_id = table_id;	
+						SDTElm[actualOtherFlag].section_syntax_indicator = (tmpSpaceList[spacePos].space[1] & 0x80) >> 7;
+						SDTElm[actualOtherFlag].section_length = ((tmpSpaceList[spacePos].space[1] & 0xf) << 8) | tmpSpaceList[spacePos].space[2];
+						SDTElm[actualOtherFlag].transport_stream_id = (tmpSpaceList[spacePos].space[3] << 8) | tmpSpaceList[spacePos].space[4];
+						SDTElm[actualOtherFlag].version_number = versionNumber;
+						SDTElm[actualOtherFlag].current_next_indicator = tmpSpaceList[spacePos].space[5] & 0x1;
+						SDTElm[actualOtherFlag].section_number = tmpSpaceList[spacePos].space[6];
+						SDTElm[actualOtherFlag].last_section_number = tmpSpaceList[spacePos].space[7];
+						SDTElm[actualOtherFlag].original_network_id = (tmpSpaceList[spacePos].space[8] << 8) | tmpSpaceList[spacePos].space[9];
+
+						tmpSpaceList[spacePos].section_length = SDTElm[actualOtherFlag].section_length;
+
+						if(table_id == service_description_section_actual)
+							lastSDTVersionActual = SDTElm[actualOtherFlag].version_number;
+						else if(table_id == service_description_section_other)
+							lastSDTVersionOther = SDTElm[actualOtherFlag].version_number;
+
+						sectionLen = tmpSpaceList[spacePos].section_length - 12;
+
+						jump = 11;
+
+						SDTElm[actualOtherFlag].serviceTableNum = 0;
+
+						j = 0;
+
+						for(i = 0; i < sectionLen; i = i + skipLen)
+						{
+							if(SDTElm[actualOtherFlag].serviceTab[j] == NULL)
+								SDTElm[actualOtherFlag].serviceTab[j] = (struct serviceTable*) malloc(sizeof(struct serviceTable));
+
+							SDTElm[actualOtherFlag].serviceTab[j] -> service_id = (tmpSpaceList[spacePos].space[jump + i] << 8) | tmpSpaceList[spacePos].space[jump + 1 + i];
+							SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length = ((tmpSpaceList[spacePos].space[jump + i + 3] & 0xf) << 8) | tmpSpaceList[spacePos].space[jump + i + 4];
+							SDTElm[actualOtherFlag].serviceTableNum++;
+
+							skipLen = 5 + SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length;  
+
+							parseDescriptor(tmpSpaceList[spacePos].space + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j);
+
+							j++;
+						}
+
+						tmpSpaceList[spacePos].emptyFlag = -1;
+//						printStructInfo(5);
+						break;
+				}
+			}
+			else
+			{
+				if((header.continuity_counter & 0xf)\
+						== ((tmpSpaceList[spacePos].continuity_counter + 1) & 0xf))
+				{
+					memcpy(tmpSpaceList[spacePos].space + tmpSpaceList[spacePos].length, buffer + *offset, bufferLen - *offset);
+					tmpSpaceList[spacePos].length += (bufferLen - *offset);
+					tmpSpaceList[spacePos].continuity_counter = header.continuity_counter;
+				}
+				else
+					printf("Error: pack not in order!\n");
+			}
+		}
+		else
+		{
+//			printf("Error[in parseSDT]: no start of pack!\n");
+		}
+	}
+
+	*offset = bufferLen;
+
+	return TRUE;
+}
+
+static int parseNIT(unsigned char* buffer, int bufferLen, int* offset)
+{
+	unsigned int table_id = 0;
+	unsigned int despLen = 0;
+	unsigned int transLen = 0;
+
+	int sectionLen = 0;
+	int versionNumber = 0;
+	int actualOtherFlag = 1;
+	int spacePos = 0;
+	int sectionNum = 0;
+	int lastSectionNum = 0;
+
+	if(bufferLen <= *offset + 7)
+		return FALSE;
+
+	if(header.payload_unit_start_indicator == 0x1)
+	{
+		table_id = buffer[*offset];
+		switch(table_id)
+		{
+			case network_information_section_actual:
+				actualOtherFlag = 0;
+			case network_information_section_other:
+
+				versionNumber = (buffer[*offset + 5] & 0x3e) >> 1; 
+				sectionNum = buffer[*offset + 6];
+				lastSectionNum = buffer[*offset + 7];
+
+				if(((table_id == network_information_section_actual && versionNumber <= lastNITVersionActual) \
+					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther))\
+					&&!(((table_id == network_information_section_actual && versionNumber == lastNITVersionActual) \
+					|| (table_id == network_information_section_actual && versionNumber == lastNITVersionActual))\
+					&& sectionNum <= lastSectionNum))
+					return TRUE;
+
+				sectionLen = ((buffer[*offset + 1] & 0xf) << 8) | buffer[*offset + 2];
+				despLen = ((buffer[*offset + 8] & 0xf) << 8) | buffer[*offset + 9];
+				transLen = ((buffer[*offset + 10 + despLen] & 0xf) << 8) | buffer[*offset + 11 + despLen];
+
+				if(sectionLen <= TS_PACK_SIZE - 3)
+				{
+					parseDescriptor(buffer + *offset + 10, despLen, actualOtherFlag, 0);
+
+					if(table_id == network_information_section_actual)
+						lastNITVersionActual = versionNumber;
+					else if(table_id == network_information_section_other)
+						lastNITVersionOther = versionNumber;
+
+				}
+				else
+				{
+					if((spacePos = getTmpSpace()) != -1)
+					{
+						memcpy(tmpSpaceList[spacePos].space, buffer + *offset, bufferLen - *offset);
+						tmpSpaceList[spacePos].length = bufferLen - *offset;
+						tmpSpaceList[spacePos].section_length = sectionLen;
+						tmpSpaceList[spacePos].PID = header.PID;
+						tmpSpaceList[spacePos].continuity_counter = header.continuity_counter;
+						tmpSpaceList[spacePos].emptyFlag = 1;
+					}
+					else
+					{
+						printf("Error: no empty space left!");
+						return FALSE;
+					}
+				}
+
+				break;
+		}
+	}
+
+	if(header.payload_unit_start_indicator == 0x0)
+	{
+		if((spacePos = findTmpSpaceByPID(header.PID)) != -1)
+		{
+			if(tmpSpaceList[spacePos].length + bufferLen - *offset >= tmpSpaceList[spacePos].section_length)
+			{
+				memcpy(tmpSpaceList[spacePos].space + tmpSpaceList[spacePos].length, buffer + *offset, bufferLen - *offset);
+
+				table_id = tmpSpaceList[spacePos].space[0];
+				versionNumber = (tmpSpaceList[spacePos].space[5] & 0x3e) >> 1; 
+				despLen = ((tmpSpaceList[spacePos].space[8] & 0xf) << 8) | tmpSpaceList[spacePos].space[*offset + 9];
+				sectionNum = tmpSpaceList[spacePos].space[6];
+				lastSectionNum = tmpSpaceList[spacePos].space[7];
+
+				if(((table_id == network_information_section_actual && versionNumber <= lastNITVersionActual) \
+					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther))\
+					&&!(((table_id == network_information_section_actual && versionNumber == lastNITVersionActual) \
+					|| (table_id == network_information_section_actual && versionNumber == lastNITVersionActual))\
+					&& sectionNum <= lastSectionNum))
+				{
+					tmpSpaceList[spacePos].emptyFlag = -1;
+					return TRUE;
+				}
+
+				parseDescriptor(tmpSpaceList[spacePos].space + 10, despLen, actualOtherFlag, 0);
+
+				if(table_id == network_information_section_actual)
+					lastNITVersionActual = versionNumber;
+				else if(table_id == network_information_section_other)
+					lastNITVersionOther = versionNumber;
+
+				tmpSpaceList[spacePos].emptyFlag = -1;
+			}
+			else
+			{
+				if((header.continuity_counter & 0xf)\
+						== ((tmpSpaceList[spacePos].continuity_counter + 1) & 0xf) || tmpSpaceList[spacePos].length == 0)
+				{
+					memcpy(tmpSpaceList[spacePos].space + tmpSpaceList[spacePos].length, buffer + *offset, bufferLen - *offset);
+					tmpSpaceList[spacePos].length += (bufferLen - *offset);
+					tmpSpaceList[spacePos].continuity_counter = header.continuity_counter;
+				}
+				else
+					printf("Error: pack not in order!\n");
+			}
+		}
+		else
+		{
+//			printf("Error[in parseNIT]: no start of pack!\n");
+		}
+	}
+
 
 	return TRUE;
 }
@@ -685,7 +1059,7 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 	int offset = 4;
 	char audioVideoFlag = 0;
 	int proNum = -1;
-	
+
 	if(bufferLen <= offset)
 		return FALSE;
 
@@ -707,8 +1081,8 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 		return TRUE;
 	}
 
-/*	if(!isPMTPID(header.PID) && PMTOkFlag == -1 && PATOkFlag == 1)
-	{
+	/*	if(!isPMTPID(header.PID) && PMTOkFlag == -1 && PATOkFlag == 1)
+		{
 		return TRUE;
 	}
 */
@@ -741,8 +1115,12 @@ static int analysePacket(unsigned char* buffer, int bufferLen)
 				parsePAT(buffer, bufferLen, &offset);	
 				break;
 
+			case 0x0010:
+				parseNIT(buffer, bufferLen, &offset);
+				break;
+
 			case 0x0011:
-//				parseSI(buffer, bufferLen, &offset);
+				parseSI(buffer, bufferLen, &offset);
 				break;
 
 			default:
@@ -783,7 +1161,7 @@ static int cutTSPacket(unsigned char* buffer, int* bufferP, int bufferLen)
 
 			if(p < bufferLen - baseP)
 			{
-				analysePacket(buffer + baseP, bufferLen - baseP);
+				analysePacket(buffer + baseP, TS_PACK_SIZE);
 #ifdef PRINT_DEBUG
 //			printStructInfo(0);
 #endif
