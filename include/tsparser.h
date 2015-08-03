@@ -14,6 +14,7 @@
 #define TS_PACK_SIZE							188
 #define TMP_SPACE_LIST_SIZE						1000
 #define MAX_PACK_SIZE							4*1024
+#define FREQ_LIST_SIZE							1000
 
 #define AUDIO_FLAG								2
 #define VIDEO_FLAG								3
@@ -48,8 +49,6 @@
 #define cable_delivery_system_descriptor		0x44
 
 char isFreqAvailable(int freq);
-char startParse();
-char endParse();
 int openTSFile(int freq);
 int closeTSFile();
 char parseTS(int freq);
@@ -62,6 +61,7 @@ struct tmpSpace
 	unsigned char space[MAX_PACK_SIZE];
 	unsigned int length;
 	unsigned int section_length;
+	unsigned int section_count;
 } tmpSpaceList[TMP_SPACE_LIST_SIZE];
 
 struct tsHeader
@@ -177,7 +177,6 @@ struct PES
 struct programInfo
 {
 	unsigned int program_number:				16;
-	unsigned int reserved:						3;
 	unsigned int network_program_PID:			13;
 };
 
@@ -258,8 +257,6 @@ struct NIT
 	unsigned char section_number;
 	unsigned char last_section_number;
 	unsigned int original_network_id;	
-	double* frequency;
-
 } NITElm[2];
 
 struct pointerField

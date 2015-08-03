@@ -18,24 +18,28 @@
 static FILE* tsFp;
 static FILE* outPutFp;
 
-unsigned char* fileBuffer;
-int fileBufferP;
-int fileBufferLen;
-int packBufferP;
-int packBufferLen;
-char PATOkFlag = -1;
-char PMTOkFlag = -1;
+static unsigned char* fileBuffer;
+static int fileBufferP;
+static int fileBufferLen;
+static char PATOkFlag = -1;
+static char PMTOkFlag = -1;
 
-int programCount = 0;
-int programPointer = 0;
+static int programCount = 0;
+static int programPointer = 0;
 
-int mapSectionLen = -1;
-int lastPATVersion = -1;
-int lastPMTVersion = -1;
-int lastSDTVersionActual = -1;
-int lastSDTVersionOther = -1;
-int lastNITVersionActual = -1;
-int lastNITVersionOther = -1;
+static int mapSectionLen = -1;
+static int lastPATVersion = -1;
+static int lastPMTVersion = -1;
+static int lastSDTVersionActual = -1;
+static int lastSDTVersionOther = -1;
+static int lastNITVersionActual = -1;
+static int lastNITVersionOther = -1;
+
+static int NITSectionCount = 0;
+static unsigned int currentFreq = 0;
+
+static int freqList[FREQ_LIST_SIZE];
+static int scannedList[FREQ_LIST_SIZE];
 
 extern int programWantToPlay;
 
@@ -55,6 +59,84 @@ char isFreqAvailable(int freq)
 		return FALSE;
 	}
 }	
+
+static void listInit(int* list, int value)
+{
+	int i = 0;
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		*(list + i) = value;
+	}
+}
+
+static char addFreq2List(int* list, int freq)
+{
+	int i = 0;
+
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		if(*(list + i) == freq)
+		{
+			return TRUE;
+		}
+	}
+
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		if(*(list + i) == -1)
+		{
+			*(list + i) = freq;
+		}
+		return TRUE;
+	}
+	return FALSE;
+}
+
+static void delFreq2List(int* list, int freq)
+{
+	int i = 0;
+
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		if(*(list + i) == freq)
+		{
+			*(list + i) = -1;
+		}
+	}
+}
+
+static int findInList(int* list, int freq)
+{
+	int i = 0;
+
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		if(*(list + i) == freq)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+static int popList(int* list)
+{
+	int i = 0;
+	int ret = -1;
+
+	for(i = 0; i < FREQ_LIST_SIZE; i++)
+	{
+		if(*(list + i) != -1)
+		{
+			ret = *(list + i);
+			*(list + i) = -1;
+			return ret;
+		}
+	}
+
+	return ret;
+}
 
 static void initProgramList()
 {
@@ -106,7 +188,10 @@ static char delProgramListPointer(int pointer)
 		for(i = 0; i < mapElm[pointer].mapNumber; i++)
 		{
 			if(mapElm[pointer].mapPESElm[i] != NULL)
+			{
 				free(mapElm[pointer].mapPESElm[i]);
+				mapElm[pointer].mapPESElm[i] = NULL;
+			}
 		}
 		mapElm[pointer].PMT_PID = -1;
 		mapElm[pointer].mapNumber = 0;
@@ -126,7 +211,10 @@ static void releaseProgramList()
 			for(j = 0; j < mapElm[i].mapNumber; j++)
 			{	
 				if(mapElm[i].mapPESElm[j] != NULL)
+				{
 					free(mapElm[i].mapPESElm[j]);
+					mapElm[i].mapPESElm[j] = NULL;
+				}
 			}
 			mapElm[i].PMT_PID = 0;
 			mapElm[i].mapNumber = 0;
@@ -145,6 +233,7 @@ static void releaseServiceList()
 			if(SDTElm[j].serviceTab[i] != NULL )
 			{
 				free(SDTElm[j].serviceTab[i]);
+				SDTElm[j].serviceTab[i] = NULL;
 			}
 		
 	}
@@ -201,8 +290,9 @@ static int findTmpSpaceByPID(unsigned int PID)
 	return -1;
 }
 
-char startParse()
+static char startParse()
 {
+
 	fileBuffer = (unsigned char*)malloc(FILE_BUFFER_SIZE);	
 
 	initProgramList();
@@ -215,19 +305,47 @@ char startParse()
 		return FALSE;
 	}
 
+	listInit(scannedList, -1);
+	listInit(freqList, -1);
 	return TRUE;
 }
 
-char endParse()
+static void initValue()
+{
+	fileBufferP = 0;
+	fileBufferLen = 0;
+	PATOkFlag = -1;
+	PMTOkFlag = -1;
+
+	lastPATVersion = -1;
+	lastPMTVersion = -1;
+	lastSDTVersionActual = -1;
+	lastSDTVersionOther = -1;
+	lastNITVersionActual = -1;
+	lastNITVersionOther = -1;
+
+	NITSectionCount = 0;
+}
+
+static char endParse()
 {
 	if(outPutFp != NULL)
+	{
 		fclose(outPutFp);
+		outPutFp = NULL;
+	}
 
 	if(fileBuffer != NULL)
-		free(fileBuffer);			
+	{
+		free(fileBuffer);
+		fileBuffer = NULL;
+	}
 
 	if(PATElm.programInfoElm != NULL)
+	{
 		free(PATElm.programInfoElm);
+		PATElm.programInfoElm = NULL;
+	}
 
 	releaseProgramList();
 	releaseServiceList();
@@ -468,10 +586,15 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int* offset)
 		return TRUE;
 	}
 
-	programCount = (PATElm.section_length - 9) / 4;
+	programCount = (PATElm.section_length - 9) / 4 + 1;
 	
 	if(PATElm.programInfoElm == NULL)
 		PATElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
+	else
+	{
+		free(PATElm.programInfoElm);
+		PATElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
+	}
 
 	for(i = 0; i < programCount; i++)
 	{
@@ -495,6 +618,11 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int*
 		return FALSE;
 
 	lastPMTVersion = PMTElm.version_number;
+
+	if(lastPATVersion >= PATElm.version_number)
+	{
+		return FALSE;
+	}
 
 	PMTElm.table_id = buffer[*offset];
 	PMTElm.section_syntax_indicator = (buffer[*offset + 1] & 0x80) >> 7;
@@ -556,7 +684,7 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int*
 
 	*offset = *offset + PMTElm.section_length + 3 + 1;
 
-//	printStructInfo(3);
+//	printStructInfo(2);
 	return TRUE;
 }
 
@@ -701,6 +829,7 @@ static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int ac
 	struct multilingual_service_name_desp_content* msdc = SDTElm[actualOtherFlag].serviceTab[stIndex]->msdc; 
 	unsigned char servicePLen = 0, serviceNLen = 0;
 	int count = 0;
+	double frequency = 0;
 
 	for(i = 0; i < bufferLen; i = i + desp_length + 2)
 	{
@@ -738,18 +867,19 @@ static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int ac
 				break;
 
 			case cable_delivery_system_descriptor:
-				if(NITElm[actualOtherFlag].frequency == NULL)
-					NITElm[actualOtherFlag].frequency = (double *)malloc(count*sizeof(double));
+				frequency = ((buffer[i + 2] & 0xf0) >> 4)*1000 + (buffer[i + 2] & 0xf)*100 + ((buffer[i + 3] & 0xf0) >> 4)*10 + (buffer[i + 3] & 0xf) + ((buffer[i + 4] & 0xf0) >> 4)*0.1 + (buffer[i + 4] & 0xf)*0.01 + ((buffer[i + 5] & 0xf0) >> 4)*0.001 + (buffer[i + 5] & 0xf)*0.0001;
 
-				NITElm[actualOtherFlag].frequency[j] = ((buffer[i + 2] & 0xf0) >> 4)*1000 + (buffer[i + 2] & 0xf)*100 + ((buffer[i + 3] & 0xf0) >> 4)*10 + (buffer[i + 3] & 0xf) + ((buffer[i + 4] & 0xf0) >> 4)*0.1 + (buffer[i + 4] & 0xf)*0.01 + ((buffer[i + 5] & 0xf0) >> 4)*0.001 + (buffer[i + 5] & 0xf)*0.0001;
-
-				if(isFreqAvailable((int)NITElm[actualOtherFlag].frequency[j]))
+				if(currentFreq != (int)frequency\
+					&& isFreqAvailable((int)frequency))
 				{
-					printf("frequency %f\n", NITElm[actualOtherFlag].frequency[j]);
-					printf("moduation 0x%x\n", buffer[i + 8]);
+					if(-1 == findInList(scannedList, frequency)\
+						&& -1 == findInList(freqList, frequency))
+					{
+						addFreq2List(freqList, frequency);
+						printf("Get valid frequency %f\n", frequency);
+					}
 				}
 
-				j++;
 				break;
 		}
 	}
@@ -880,7 +1010,10 @@ static int parseSI(unsigned char* buffer, int bufferLen, int* offset)
 
 				if((table_id == service_description_section_actual && versionNumber <= lastSDTVersionActual) \
 						|| (table_id == service_description_section_other && versionNumber <= lastSDTVersionOther))
+				{
+					tmpSpaceList[spacePos].emptyFlag = -1;
 					return TRUE;
+				}
 
 				switch(table_id)
 				{
@@ -987,28 +1120,35 @@ static int parseNIT(unsigned char* buffer, int bufferLen, int* offset)
 				sectionNum = buffer[*offset + 6];
 				lastSectionNum = buffer[*offset + 7];
 
-				if(((table_id == network_information_section_actual && versionNumber <= lastNITVersionActual) \
-					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther))\
-					&&!(((table_id == network_information_section_actual && versionNumber == lastNITVersionActual) \
-					|| (table_id == network_information_section_actual && versionNumber == lastNITVersionActual))\
-					&& sectionNum <= lastSectionNum))
+				if((table_id == network_information_section_actual && versionNumber <= lastNITVersionActual) \
+					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther))
 					return TRUE;
 
 				sectionLen = ((buffer[*offset + 1] & 0xf) << 8) | buffer[*offset + 2];
 				despLen = ((buffer[*offset + 8] & 0xf) << 8) | buffer[*offset + 9];
 				transLen = ((buffer[*offset + 10 + despLen] & 0xf) << 8) | buffer[*offset + 11 + despLen];
 
+				NITSectionCount++;
+
 				if(sectionLen <= TS_PACK_SIZE - 3)
 				{
-					parseDescriptor(buffer + *offset + 10, despLen, actualOtherFlag, 0);
+					if(despLen > 0)
+						parseDescriptor(buffer + *offset + 10, despLen, actualOtherFlag, 0);
 
 					if(transLen > 0)
 						parseTranStreams(buffer + *offset + 12 + despLen, transLen, actualOtherFlag, 0);
 
-					if(table_id == network_information_section_actual)
-						lastNITVersionActual = versionNumber;
-					else if(table_id == network_information_section_other)
-						lastNITVersionOther = versionNumber;
+					if(sectionNum == lastSectionNum && NITSectionCount == lastSectionNum + 1)
+					{
+						if(table_id == network_information_section_actual)
+							lastNITVersionActual = versionNumber;
+						else if(table_id == network_information_section_other)
+							lastNITVersionOther = versionNumber;
+					}
+					else if(sectionNum == lastSectionNum)
+					{
+						NITSectionCount = 0;
+					}
 
 				}
 				else
@@ -1048,34 +1188,42 @@ static int parseNIT(unsigned char* buffer, int bufferLen, int* offset)
 				lastSectionNum = tmpSpaceList[spacePos].space[7];
 
 				if(((table_id == network_information_section_actual && versionNumber <= lastNITVersionActual) \
-					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther))\
-					&&!(((table_id == network_information_section_actual && versionNumber == lastNITVersionActual) \
-					|| (table_id == network_information_section_actual && versionNumber == lastNITVersionActual))\
-					&& sectionNum <= lastSectionNum))
+					|| (table_id == network_information_section_other && versionNumber <= lastNITVersionOther)))
 				{
 					tmpSpaceList[spacePos].emptyFlag = -1;
 					return TRUE;
 				}
 
-				parseDescriptor(tmpSpaceList[spacePos].space + 10, despLen, actualOtherFlag, 0);
+				if(despLen > 0)
+					parseDescriptor(tmpSpaceList[spacePos].space + 10, despLen, actualOtherFlag, 0);
 
 				transLen = ((tmpSpaceList[spacePos].space[10 + despLen] & 0xf) << 8)\
 						   | tmpSpaceList[spacePos].space[11 + despLen];
 
+				tmpSpaceList[spacePos].section_count++;
+
 				if(transLen > 0)
 					parseTranStreams(tmpSpaceList[spacePos].space + 12 + despLen, transLen, actualOtherFlag, 0);
 
-				if(table_id == network_information_section_actual)
-					lastNITVersionActual = versionNumber;
-				else if(table_id == network_information_section_other)
-					lastNITVersionOther = versionNumber;
+				if(sectionNum == lastSectionNum && tmpSpaceList[spacePos].section_count == lastSectionNum + 1)
+				{
+					if(table_id == network_information_section_actual)
+						lastNITVersionActual = versionNumber;
+					else if(table_id == network_information_section_other)
+						lastNITVersionOther = versionNumber;
+				}
+				else if(sectionNum == lastSectionNum)
+				{
+					tmpSpaceList[spacePos].section_count = 0;
+				}
 
 				tmpSpaceList[spacePos].emptyFlag = -1;
 			}
 			else
 			{
 				if((header.continuity_counter & 0xf)\
-						== ((tmpSpaceList[spacePos].continuity_counter + 1) & 0xf) || tmpSpaceList[spacePos].length == 0)
+					== ((tmpSpaceList[spacePos].continuity_counter + 1) & 0xf)\
+				   	|| tmpSpaceList[spacePos].length == 0)
 				{
 					memcpy(tmpSpaceList[spacePos].space + tmpSpaceList[spacePos].length, buffer + *offset, bufferLen - *offset);
 					tmpSpaceList[spacePos].length += (bufferLen - *offset);
@@ -1225,25 +1373,42 @@ char parseTS(int freq)
 {
 	int readLen = 0;
 
-	if(openTSFile(freq) != TRUE)
-		return FALSE;
+	startParse();
+	addFreq2List(freqList, freq);
 
-	while(1)
+	while((freq = popList(freqList)) != -1)
 	{
-		if((readLen = fread(fileBuffer + fileBufferP, sizeof(unsigned char), FILE_BUFFER_SIZE - fileBufferP, tsFp)) <= 0)
-			break;
 
-		fileBufferLen = readLen + fileBufferP;
-		if(!cutTSPacket(fileBuffer, &fileBufferP, fileBufferLen))
+		printf("Seek freq %d\n", freq);
+		if(openTSFile(freq) != TRUE)
+			return FALSE;
+
+		initValue();
+
+		currentFreq = freq;
+
+		while(1)
 		{
-			break;	
-		}
-		
-		memcpy(fileBuffer, fileBuffer + fileBufferP, fileBufferLen - fileBufferP);
-		fileBufferP = fileBufferLen - fileBufferP;
-	}
-	
-	closeTSFile();
+			if((readLen = fread(fileBuffer + fileBufferP, sizeof(unsigned char), FILE_BUFFER_SIZE - fileBufferP, tsFp)) <= 0)
+				break;
 
+			fileBufferLen = readLen + fileBufferP;
+			if(!cutTSPacket(fileBuffer, &fileBufferP, fileBufferLen))
+			{
+				break;	
+			}
+
+			memcpy(fileBuffer, fileBuffer + fileBufferP, fileBufferLen - fileBufferP);
+			fileBufferP = fileBufferLen - fileBufferP;
+		}
+
+		closeTSFile();
+
+		addFreq2List(scannedList, currentFreq);
+
+		currentFreq = 0;
+	}
+
+	endParse();
 	return TRUE;
 }
