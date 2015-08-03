@@ -44,6 +44,9 @@
 #define network_information_section_actual		0x40
 #define network_information_section_other		0x41
 
+#define multilingual_service_name_descriptor	0x5d
+#define cable_delivery_system_descriptor		0x44
+
 char isFreqAvailable(int freq);
 char startParse();
 char endParse();
@@ -255,7 +258,7 @@ struct NIT
 	unsigned char section_number;
 	unsigned char last_section_number;
 	unsigned int original_network_id;	
-
+	double* frequency;
 
 } NITElm[2];
 
