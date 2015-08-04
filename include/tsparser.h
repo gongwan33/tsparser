@@ -11,6 +11,9 @@
 #define TRUE									1
 #define FALSE									0
 
+#define PROGRAM_NUM_FLAG						0
+#define PMT_PID_FLAG							1
+
 #define TS_PACK_SIZE							188
 #define TMP_SPACE_LIST_SIZE						1000
 #define MAX_PACK_SIZE							4*1024
@@ -214,9 +217,9 @@ struct multilingual_service_name_desp_content
 {
 	unsigned int ISO_639_language_code;
 	unsigned char service_provider_name_length;
-	char* service_provider;
+	char service_provider[255];
 	unsigned char service_name_length;
-	char* service_name;
+	char service_name[255];
 };
 
 struct serviceTable
@@ -227,7 +230,7 @@ struct serviceTable
 	unsigned int running_status:				3;
 	unsigned int free_CA_mode:					1;
 	unsigned int descriptors_loop_length:		12;
-	struct multilingual_service_name_desp_content msdc[51];
+	struct multilingual_service_name_desp_content msdc[60];
 	unsigned int service_count;
 };
 
@@ -278,6 +281,17 @@ struct MAP
 	struct mapPES* mapPESElm[MAX_PER_PMT_NUMBER];
 	unsigned int mapNumber;
 } mapElm[MAX_PROGRAM_NUMBER];
+
+struct dumpList
+{
+	unsigned int program_number;
+	int PMT_PID;
+	unsigned int frequency;
+	struct mapPES mapPESElm[MAX_PER_PMT_NUMBER];
+	unsigned int mapNumber;
+	struct multilingual_service_name_desp_content msdc[10];
+	unsigned int msdcNumber;
+} dumpListElm[MAX_PROGRAM_NUMBER];
 
 #endif
 

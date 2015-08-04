@@ -60,6 +60,38 @@ char isFreqAvailable(int freq)
 	}
 }	
 
+static int getDumpPos()
+{
+	int i = 0;
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(dumpListElm[i].PMT_PID == -1)
+			return i;
+	}
+
+	return -1;
+}
+
+static int findDumpList(int elm, char flag)
+{
+	int i = 0;
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(flag == PROGRAM_NUM_FLAG)
+		{
+			if(dumpListElm[i].program_number == elm)
+				return i;
+		}
+		else if(flag == PMT_PID_FLAG)
+		{
+			if(dumpListElm[i].PMT_PID == elm)
+				return i;
+		}
+	}
+
+	return -1;
+}
+
 static void listInit(int* list, int value)
 {
 	int i = 0;
@@ -153,6 +185,19 @@ static void initProgramList()
 	}
 }
 
+static void initDumpList()
+{
+	int i = 0, j = 0;
+
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		dumpListElm[i].msdcNumber = 0;
+		dumpListElm[i].mapNumber = 0;
+		dumpListElm[i].PMT_PID = -1;
+		dumpListElm[i].program_number = -1;
+	}
+}
+
 static int findInProgramList(unsigned int PID)
 {
 	int i = 0;
@@ -230,7 +275,7 @@ static void releaseServiceList()
 	for(i = 0; i < MAX_SERVICE_NUMBER; i++)
 	{
 		for(j = 0; j < 2; j++)
-			if(SDTElm[j].serviceTab[i] != NULL )
+			if(SDTElm[j].serviceTab[i] != NULL)
 			{
 				free(SDTElm[j].serviceTab[i]);
 				SDTElm[j].serviceTab[i] = NULL;
@@ -298,6 +343,7 @@ static char startParse()
 	initProgramList();
 	initTmpSpace();
 	memset(&header, 0, sizeof(header));
+	initDumpList();
 
 	if((outPutFp = fopen("./outPutProgram.ts", "wr+")) == NULL)
 	{
@@ -376,9 +422,53 @@ int closeTSFile()
 	return ret;
 }
 
-static void printStructInfo(int flag)
+static char dumpInfo2File()
 {
 	int i = 0, j = 0;
+	FILE* dumpFp;
+
+	if(NULL == (dumpFp = fopen("./tsInfo.dat","wr+")))
+	{
+		return FALSE;
+	}
+	fprintf(dumpFp, "---------------------------------------------\n");
+	fprintf(dumpFp, "TS Info:\n");
+	fprintf(dumpFp, "---------------------------------------------\n");
+	for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+	{
+		if(dumpListElm[i].program_number == -1)
+			continue;
+
+		fprintf(dumpFp, "program_nubmer: %d\n", dumpListElm[i].program_number);
+		fprintf(dumpFp, "PMT_PID: 0x%x\n", dumpListElm[i].PMT_PID);
+		fprintf(dumpFp, "frequency: %d MHz\n", dumpListElm[i].frequency);
+
+		for(j = 0; j < dumpListElm[i].msdcNumber; j++)
+		{
+			fprintf(dumpFp, "\t ******************************\n");
+			fprintf(dumpFp,"\t service provider: %s\n", dumpListElm[i].msdc[j].service_provider);
+			fprintf(dumpFp,"\t service name: %s\n", dumpListElm[i].msdc[j].service_name);
+			fprintf(dumpFp,"\t ******************************\n");
+		}
+
+		for(j = 0; j < dumpListElm[i].mapNumber; j++)
+		{
+			fprintf(dumpFp, "\t ++++++++++++++++++++++++++++++\n");
+			fprintf(dumpFp, "\t stream_type: 0x%x\n", dumpListElm[i].mapPESElm[j].stream_type);
+			fprintf(dumpFp, "\t elementary_PID: 0x%x\n", dumpListElm[i].mapPESElm[j].elementary_PID);
+			fprintf(dumpFp, "\t ++++++++++++++++++++++++++++++\n");
+		}
+
+		fprintf(dumpFp, "---------------------------------------------\n");
+	}
+
+	fclose(dumpFp);
+	return TRUE;
+}
+
+static void printStructInfo(int flag)
+{
+	int i = 0, j = 0, k = 0;
 
 	switch(flag)
 	{
@@ -499,6 +589,39 @@ static void printStructInfo(int flag)
 			}
 			break;
 
+		case 6:
+			printf("---------------------------------------------\n");
+			printf("TS Info:\n");
+			printf("---------------------------------------------\n");
+			for(i = 0; i < MAX_PROGRAM_NUMBER; i++)
+			{
+				if(dumpListElm[i].program_number == -1)
+					continue;
+
+				printf("program_nubmer: %d\n", dumpListElm[i].program_number);
+				printf("PMT_PID: 0x%x\n", dumpListElm[i].PMT_PID);
+				printf("frequency: %d MHz\n", dumpListElm[i].frequency);
+
+				for(j = 0; j < dumpListElm[i].msdcNumber; j++)
+				{
+					printf("\t ******************************\n");
+					printf("\t service provider: %s\n", dumpListElm[i].msdc[j].service_provider);
+					printf("\t service name: %s\n", dumpListElm[i].msdc[j].service_name);
+					printf("\t ******************************\n");
+				}
+
+				for(j = 0; j < dumpListElm[i].mapNumber; j++)
+				{
+					printf("\t ++++++++++++++++++++++++++++++\n");
+					printf("\t stream_type: 0x%x\n", dumpListElm[i].mapPESElm[j].stream_type);
+					printf("\t elementary_PID: 0x%x\n", dumpListElm[i].mapPESElm[j].elementary_PID);
+					printf("\t ++++++++++++++++++++++++++++++\n");
+				}
+
+				printf("---------------------------------------------\n");
+			}
+			break;
+
 		default:
 			printf("In printStructInfo: unknow flag!\n");
 	}
@@ -552,6 +675,7 @@ static int isPESPID(unsigned int PID, int* proNum)
 static int parsePAT(unsigned char* buffer, int bufferLen, int* offset)
 {
 	int i = 0;
+	int dPos = 0;
 
 	if(bufferLen <= *offset + 7)
 		return FALSE;
@@ -586,7 +710,7 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int* offset)
 		return TRUE;
 	}
 
-	programCount = (PATElm.section_length - 9) / 4 + 1;
+	programCount = (PATElm.section_length - 9) / 4;
 	
 	if(PATElm.programInfoElm == NULL)
 		PATElm.programInfoElm = (struct programInfo *)malloc(sizeof(struct programInfo) * programCount);
@@ -600,6 +724,13 @@ static int parsePAT(unsigned char* buffer, int bufferLen, int* offset)
 	{
 		PATElm.programInfoElm[i].program_number = (buffer[*offset + i*4 + 8] << 8) | buffer[*offset + i*4 + 9];
 		PATElm.programInfoElm[i].network_program_PID = ((buffer[*offset + i*4 + 10] & 0x01) << 8) | buffer[*offset + i*4 + 11];
+		if(-1 == findDumpList(PATElm.programInfoElm[i].network_program_PID, PMT_PID_FLAG)\
+			&& -1 != (dPos = getDumpPos()))
+		{
+			dumpListElm[dPos].program_number = PATElm.programInfoElm[i].program_number;
+			dumpListElm[dPos].PMT_PID = PATElm.programInfoElm[i].network_program_PID;
+			dumpListElm[dPos].frequency = currentFreq;
+		}
 	}
 
 //	printStructInfo(1);
@@ -613,6 +744,7 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int*
 	int i = 0, j = 0;
 	int jump = 0;
 	unsigned int skipLen = 0;
+	int dPos = 0;
 
 	if(bufferLen <= *offset + 7)
 		return FALSE;
@@ -666,6 +798,10 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int*
 
 	jump = *offset + 12 + PMTElm.program_info_length;
 
+	dPos = findDumpList(PID, PMT_PID_FLAG);
+
+	dumpListElm[dPos].mapNumber = 0;
+		mapElm[programPointer].mapNumber = 0;
 	for(i = 0; i < mapSectionLen; i = i + skipLen)
 	{
 		mapElm[programPointer].mapPESElm[j] = (struct mapPES*) malloc(sizeof(struct mapPES));
@@ -675,6 +811,13 @@ static int parsePMT(unsigned int PID, unsigned char* buffer, int bufferLen, int*
 		skipLen = 5 + mapElm[programPointer].mapPESElm[j] -> ES_info_length;  
 
 		mapElm[programPointer].mapNumber = j + 1;
+
+		if(-1 != dPos)
+		{
+			dumpListElm[dPos].mapPESElm[j].stream_type = mapElm[programPointer].mapPESElm[j] -> stream_type;
+			dumpListElm[dPos].mapPESElm[j].elementary_PID = mapElm[programPointer].mapPESElm[j] -> elementary_PID;
+			dumpListElm[dPos].mapNumber++;
+		}
 
 		j++;
 
@@ -821,7 +964,7 @@ static int parsePES(unsigned char* buffer, int bufferLen, int* offset, int flag)
 	return TRUE;
 }
 
-static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int actualOtherFlag, int stIndex)
+static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int actualOtherFlag, int stIndex, int id)
 {
 	int i = 0, j = 0, m = 0;
 	unsigned char desp_tag;
@@ -830,6 +973,9 @@ static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int ac
 	unsigned char servicePLen = 0, serviceNLen = 0;
 	int count = 0;
 	double frequency = 0;
+	int dPos = 0;
+
+	dPos = findDumpList(id, PROGRAM_NUM_FLAG);
 
 	for(i = 0; i < bufferLen; i = i + desp_length + 2)
 	{
@@ -839,14 +985,13 @@ static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int ac
 		{
 			case multilingual_service_name_descriptor:
 				SDTElm[actualOtherFlag].serviceTab[stIndex]->service_count = 0;
+				dumpListElm[dPos].msdcNumber = 0;
 				for(m = 0; m < desp_length; m = m + servicePLen + serviceNLen + 5 )
 				{
 					msdc[j].ISO_639_language_code = (buffer[m + i + 2] << 16) | (buffer[m + i + 3] << 8) | (buffer[m + i + 4]);
 					servicePLen = buffer[m + i + 5];
 					msdc[j].service_provider_name_length = servicePLen;
 
-					if(msdc[j].service_provider == NULL)
-						msdc[j].service_provider = (char*)malloc(msdc[j].service_provider_name_length + 1);
 					memcpy(msdc[j].service_provider, buffer + m + i + 6, msdc[j].service_provider_name_length);
 
 					*(msdc[j].service_provider + msdc[j].service_provider_name_length) = '\0';
@@ -854,13 +999,18 @@ static int parseDescriptor(unsigned char* buffer, unsigned int bufferLen, int ac
 					serviceNLen = buffer[m + i + 6 + servicePLen];
 					msdc[j].service_name_length = serviceNLen;
 
-					if(msdc[j].service_name == NULL)
-						msdc[j].service_name = (char*)malloc(msdc[j].service_name_length + 1);
 					memcpy(msdc[j].service_name, buffer + m + i + 7 + servicePLen, msdc[j].service_name_length);
 
 					*(msdc[j].service_name + msdc[j].service_name_length) = '\0';
 
 					SDTElm[actualOtherFlag].serviceTab[stIndex]->service_count++;
+
+					if(dPos != -1)
+					{
+						memcpy(dumpListElm[dPos].msdc[j].service_provider, msdc[j].service_provider, servicePLen + 1);
+						memcpy(dumpListElm[dPos].msdc[j].service_name, msdc[j].service_name, serviceNLen + 1);
+						dumpListElm[dPos].msdcNumber++;
+					}
 
 					j++;
 				}
@@ -898,7 +1048,8 @@ static int parseTranStreams(unsigned char* buffer, unsigned int bufferLen, int a
 	{
 		streamId = (buffer[i] << 8) | buffer[i + 1];
 		streamLen = ((buffer[i + 4] & 0xf) << 8) | buffer[i + 5];
-		parseDescriptor(buffer + i + 6, streamLen, actualOtherFlag, stIndex);
+
+		parseDescriptor(buffer + i + 6, streamLen, actualOtherFlag, stIndex, 0);
 	}
 
 	return TRUE;
@@ -967,7 +1118,7 @@ static int parseSI(unsigned char* buffer, int bufferLen, int* offset)
 						SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length = ((buffer[jump + i + 3] & 0xf) << 8) | buffer[jump + i + 4];
 						SDTElm[actualOtherFlag].serviceTableNum++;
 						
-						parseDescriptor(buffer + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j);
+						parseDescriptor(buffer + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j, SDTElm[actualOtherFlag].serviceTab[j] -> service_id);
 						skipLen = 5 + SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length;  
 
 						j++;
@@ -1057,7 +1208,7 @@ static int parseSI(unsigned char* buffer, int bufferLen, int* offset)
 
 							skipLen = 5 + SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length;  
 
-							parseDescriptor(tmpSpaceList[spacePos].space + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j);
+							parseDescriptor(tmpSpaceList[spacePos].space + jump + i + 5, SDTElm[actualOtherFlag].serviceTab[j] -> descriptors_loop_length, actualOtherFlag, j, SDTElm[actualOtherFlag].serviceTab[j] -> service_id);
 
 							j++;
 						}
@@ -1133,7 +1284,7 @@ static int parseNIT(unsigned char* buffer, int bufferLen, int* offset)
 				if(sectionLen <= TS_PACK_SIZE - 3)
 				{
 					if(despLen > 0)
-						parseDescriptor(buffer + *offset + 10, despLen, actualOtherFlag, 0);
+						parseDescriptor(buffer + *offset + 10, despLen, actualOtherFlag, 0, 0);
 
 					if(transLen > 0)
 						parseTranStreams(buffer + *offset + 12 + despLen, transLen, actualOtherFlag, 0);
@@ -1195,7 +1346,7 @@ static int parseNIT(unsigned char* buffer, int bufferLen, int* offset)
 				}
 
 				if(despLen > 0)
-					parseDescriptor(tmpSpaceList[spacePos].space + 10, despLen, actualOtherFlag, 0);
+					parseDescriptor(tmpSpaceList[spacePos].space + 10, despLen, actualOtherFlag, 0, 0);
 
 				transLen = ((tmpSpaceList[spacePos].space[10 + despLen] & 0xf) << 8)\
 						   | tmpSpaceList[spacePos].space[11 + despLen];
@@ -1409,6 +1560,8 @@ char parseTS(int freq)
 		currentFreq = 0;
 	}
 
+	printStructInfo(6);
+	dumpInfo2File();
 	endParse();
 	return TRUE;
 }
